@@ -1,0 +1,21 @@
+# AGENTS.md
+
+## Project rules for AI tools
+
+This is an internal React ITAM platform.
+
+### Architecture
+- Preserve modular structure under /src/features
+- Do not collapse modules back into a single file
+- Prefer incremental edits over large rewrites
+- Reuse existing components when possible
+
+### Data integrity
+- Dashboard numbers must derive from dataset values
+- Avoid hardcoded metrics
+- Refresh pipeline, asset registry, and inventory should remain connected
+
+### Code safety
+- Do not remove modules unless explicitly instructed
+- Maintain navigation IDs and route compatibility
+- Summarize all modified files after changes
