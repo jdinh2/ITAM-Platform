@@ -22,6 +22,17 @@ import {
   canCompleteReturnIntake,
   createCaseActions,
 } from "./features/cases/actions.js";
+import {
+  ITAM_STORAGE_KEYS,
+  loadStoredDataset,
+  saveStoredDataset,
+  clearStoredDatasets,
+} from "./persistence.js";
+import {
+  ExecutiveTeamPerformanceSection,
+  WorkloadPlannerAnalyticsSection,
+  TeamWorkloadInsightsSection,
+} from "./features/analytics/TeamPerformancePanels.jsx";
 
 // ============================================================================
 // ITAM PLATFORM — Inventory module with Booking Request workflow
@@ -146,6 +157,13 @@ const resolveRoleSafeNav=(role,navId)=>{
   const defaultNavId=getDefaultNavIdForRole(role);
   return allowedNavIds.has(navId)?navId:defaultNavId;
 };
+const getInitialAssets=()=>loadStoredDataset(ITAM_STORAGE_KEYS.assets,SEED_REG_ASSETS);
+const getInitialAssetActivity=()=>loadStoredDataset(
+  ITAM_STORAGE_KEYS.assetActivity,
+  buildInitialAssetActivity(getInitialAssets())
+);
+const getInitialCases=()=>loadStoredDataset(ITAM_STORAGE_KEYS.cases,SEED_CASES);
+const getInitialAuditEvents=()=>loadStoredDataset(ITAM_STORAGE_KEYS.auditEvents,AUDIT_EVENTS);
 function validateNavConfig(config){
   const errors=[];
   const byId=new Map();
@@ -337,7 +355,7 @@ const INV=[
   {s:"OJ8760011A",n:"APC Feet",c:"APC",t:"Server Room",q:6,r:5,b:"",l:"Charlotte, NC (PTC)"},
   {s:"AP9641",n:"APC NMC3",c:"APC",t:"Server Room",q:13,r:5,b:"",l:"Charlotte, NC (PTC)"},
   {s:"P2425HE",n:"Dell 24\" Monitor w/ Dock",c:"Dell",t:"Monitor",q:11,r:1,b:"",l:"Charlotte, NC (PTC)"},
-  {s:"Refurb",n:"Refurbished Laptop",c:"Microsoft",t:"Laptop",q:99777,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"Refurb",n:"Refurbished Laptop",c:"Microsoft",t:"Laptop",q:100,r:1,b:"",l:"Charlotte, NC (PTC)"},
   {s:"EP233223",n:"Surface Laptop",c:"Microsoft",t:"Laptop",q:0,r:10,b:"",l:"Charlotte, NC (PTC)"},
   {s:"DellPremiumPA14250",n:"Dell Pro 32GB",c:"Dell",t:"Laptop",q:203,r:100,b:"",l:"Charlotte, NC (PTC)"},
   {s:"MA14250",n:"Dell Pro Max 64GB",c:"Dell",t:"Laptop",q:47,r:10,b:"",l:"Charlotte, NC (PTC)"},
@@ -1339,7 +1357,7 @@ const toLocalISODate=(d=new Date())=>{const x=new Date(d.getTime()-d.getTimezone
 const currentYear=()=>toLocalISODate().slice(0,4);
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ INVENTORY + BOOKINGS VIEW Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function InventoryModule({setToast,currentNav}){
+function InventoryModule({setToast,currentNav,assets=[]}){
   const [tab,setTab]=useState(currentNav==="inventory.bookings"?"bookings":"stock"); // stock | bookings | newBooking
   // Sync internal tab when sidebar nav changes
   useEffect(()=>{
@@ -1360,21 +1378,29 @@ function InventoryModule({setToast,currentNav}){
   // New booking form
   const [form,setForm]=useState({user:"",loc:"Charlotte, NC (PTC)",type:"Refresh",ref:"",by:"",needed:"",notes:"",items:[{sku:"",name:"",qty:1}]});
 
-  const lowItems=useMemo(()=>invItems.filter(i=>i.q>0&&i.q<5),[invItems]);
-  const totalU=useMemo(()=>invItems.reduce((a,i)=>a+i.q,0),[invItems]);
-  const invBySku=useMemo(()=>Object.fromEntries(invItems.map(i=>[i.s,i])),[invItems]);
+  const refurbishedLaptopCount=useMemo(()=>assets.filter(asset=>
+    asset?.cat==="Laptop" &&
+    asset?.status==="inventory" &&
+    asset?.cond &&
+    asset.cond!=="New" &&
+    asset.cond!=="\u2014"
+  ).length,[assets]);
+  const displayInvItems=useMemo(()=>invItems.map(item=>item.s==="Refurb"?{...item,q:refurbishedLaptopCount}:item),[invItems,refurbishedLaptopCount]);
+  const lowItems=useMemo(()=>displayInvItems.filter(i=>i.q>0&&i.q<5),[displayInvItems]);
+  const totalU=useMemo(()=>displayInvItems.reduce((a,i)=>a+i.q,0),[displayInvItems]);
+  const invBySku=useMemo(()=>Object.fromEntries(displayInvItems.map(i=>[i.s,i])),[displayInvItems]);
 
   // Stock table filtering
   const filtered=useMemo(()=>{
-    let list=showLow?lowItems:[...invItems];
+    let list=showLow?lowItems:[...displayInvItems];
     if(typeF!=="all")list=list.filter(i=>i.t===typeF);
     if(search.trim()){const q=search.toLowerCase();list=list.filter(i=>i.s.toLowerCase().includes(q)||i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)||i.t.toLowerCase().includes(q));}
     if(sortCol){list=[...list].sort((a,b)=>{const va=a[sortCol]??"";const vb=b[sortCol]??"";if(typeof va==="number"&&typeof vb==="number")return sortDir==="asc"?va-vb:vb-va;return sortDir==="asc"?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));});}
     return list;
-  },[search,typeF,sortCol,sortDir,showLow,lowItems]);
+  },[displayInvItems,search,typeF,sortCol,sortDir,showLow,lowItems]);
 
   const hSort=(k)=>{if(sortCol===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortCol(k);setSortDir("asc");}};
-  const det=sel?invItems.find(i=>i.s===sel):null;
+  const det=sel?displayInvItems.find(i=>i.s===sel):null;
   const bkDet=bkSel?bookings.find(b=>b.id===bkSel):null;
 
   // Booking KPIs
@@ -1421,16 +1447,16 @@ function InventoryModule({setToast,currentNav}){
   };
 
   // Form item helpers
-  const addItem=()=>{const selectable=invItems.filter(i=>i.q>0).length;if(form.items.length>=selectable){setToast("All available SKUs are already selected.");return;}setForm(f=>({...f,items:[...f.items,{sku:"",name:"",qty:1}]}));};
+  const addItem=()=>{const selectable=displayInvItems.filter(i=>i.q>0).length;if(form.items.length>=selectable){setToast("All available SKUs are already selected.");return;}setForm(f=>({...f,items:[...f.items,{sku:"",name:"",qty:1}]}));};
   const rmItem=(idx)=>setForm(f=>({...f,items:f.items.filter((_,i)=>i!==idx)}));
-  const updItem=(idx,field,val)=>setForm(f=>({...f,items:f.items.map((it,i)=>{if(i!==idx)return it;if(field==="sku"){const found=invItems.find(x=>x.s===val);return {...it,sku:val,name:found?found.n:""};}return {...it,[field]:field==="qty"?Math.max(1,parseInt(val)||1):val};})}));
+  const updItem=(idx,field,val)=>setForm(f=>({...f,items:f.items.map((it,i)=>{if(i!==idx)return it;if(field==="sku"){const found=displayInvItems.find(x=>x.s===val);return {...it,sku:val,name:found?found.n:""};}return {...it,[field]:field==="qty"?Math.max(1,parseInt(val)||1):val};})}));
 
   const tabBtn=(id,label,count)=>(<button onClick={()=>{setTab(id);setSel(null);setBkSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${tab===id?C.accent:C.border}`,background:tab===id?C.accentSoft:C.surface,color:tab===id?C.accent:C.sub,fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>{label}{count!==undefined&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:tab===id?C.accent+"18":C.graySoft,color:tab===id?C.accent:C.muted,fontFamily:MN}}>{count}</span>}</button>);
 
   return (<>
     {/* Tab bar */}
     <div style={{display:"flex",gap:6,marginBottom:16}}>
-      {tabBtn("stock","Stock Overview",invItems.length)}
+      {tabBtn("stock","Stock Overview",displayInvItems.length)}
       {tabBtn("bookings","Booking Requests",bookings.length)}
       <button onClick={()=>{setTab("newBooking");setSel(null);setBkSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:"none",background:tab==="newBooking"?C.accent:C.green,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ New Booking</button>
     </div>
@@ -1438,11 +1464,11 @@ function InventoryModule({setToast,currentNav}){
     {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â STOCK TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
     {tab==="stock"&&(<>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-        <Kpi label="Total SKUs" value={invItems.length} color={C.accent}/>
+        <Kpi label="Total SKUs" value={displayInvItems.length} color={C.accent}/>
         <Kpi label="Total Units" value={totalU.toLocaleString()}/>
-        <Kpi label="Laptops" value={invItems.filter(i=>i.t==="Laptop").reduce((a,i)=>a+i.q,0).toLocaleString()} sub={`${invItems.filter(i=>i.t==="Laptop").length} SKUs`} color={C.green}/>
-        <Kpi label="Docks" value={invItems.filter(i=>i.t==="Dock").reduce((a,i)=>a+i.q,0)} color={C.purple}/>
-        <Kpi label="Monitors" value={invItems.filter(i=>i.t==="Monitor").reduce((a,i)=>a+i.q,0)} color={C.cyan}/>
+        <Kpi label="Laptops" value={displayInvItems.filter(i=>i.t==="Laptop").reduce((a,i)=>a+i.q,0).toLocaleString()} sub={`${displayInvItems.filter(i=>i.t==="Laptop").length} SKUs`} color={C.green}/>
+        <Kpi label="Docks" value={displayInvItems.filter(i=>i.t==="Dock").reduce((a,i)=>a+i.q,0)} color={C.purple}/>
+        <Kpi label="Monitors" value={displayInvItems.filter(i=>i.t==="Monitor").reduce((a,i)=>a+i.q,0)} color={C.cyan}/>
         <Kpi label="Low Stock" value={lowItems.length} sub="Qty < 5" color={C.red} alert={lowItems.length>0} onClick={()=>setShowLow(!showLow)}/>
       </div>
       {/* Low stock alerts */}
@@ -1454,7 +1480,7 @@ function InventoryModule({setToast,currentNav}){
       <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search SKU, product\u2026" style={{...inp,paddingLeft:26}}/></div>
         <div style={{width:1,height:20,background:C.border}}/>
-        {["all","Laptop","Dock","Monitor","Headphones","Cable","Camera"].map(tp=>{const cnt=tp==="all"?invItems.length:invItems.filter(i=>i.t===tp).length;return cnt>0?(<button key={tp} onClick={()=>{setTypeF(tp);setShowLow(false);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF===tp?C.accent:C.border}`,background:typeF===tp?C.accentSoft:C.surface,color:typeF===tp?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{tp==="all"?"All":tp} ({cnt})</button>):null;})}
+        {["all","Laptop","Dock","Monitor","Headphones","Cable","Camera"].map(tp=>{const cnt=tp==="all"?displayInvItems.length:displayInvItems.filter(i=>i.t===tp).length;return cnt>0?(<button key={tp} onClick={()=>{setTypeF(tp);setShowLow(false);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF===tp?C.accent:C.border}`,background:typeF===tp?C.accentSoft:C.surface,color:typeF===tp?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{tp==="all"?"All":tp} ({cnt})</button>):null;})}
       </div>
       {/* Table + drawer */}
       <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
@@ -1569,7 +1595,7 @@ function InventoryModule({setToast,currentNav}){
           {/* Items */}
           <SH color={C.purple} badge={`${form.items.length} items`}>Requested Items</SH>
           {form.items.map((it,idx)=>(<div key={idx} style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8,padding:"8px 10px",background:C.surfaceAlt,borderRadius:6,border:`1px solid ${C.borderLight}`}}>
-            <FF label="SKU *" w="160px"><select value={it.sku} onChange={e=>updItem(idx,"sku",e.target.value)} style={inp}><option value="">Select SKU\u2026</option>{invItems.filter(i=>i.q>0&&(i.s===it.sku||!form.items.some((row,rowIdx)=>rowIdx!==idx&&row.sku===i.s))).map(i=>(<option key={i.s} value={i.s}>{i.s} \u2014 {i.n} ({i.q} avail)</option>))}</select></FF>
+            <FF label="SKU *" w="160px"><select value={it.sku} onChange={e=>updItem(idx,"sku",e.target.value)} style={inp}><option value="">Select SKU\u2026</option>{displayInvItems.filter(i=>i.q>0&&(i.s===it.sku||!form.items.some((row,rowIdx)=>rowIdx!==idx&&row.sku===i.s))).map(i=>(<option key={i.s} value={i.s}>{i.s} \u2014 {i.n} ({i.q} avail)</option>))}</select></FF>
             <FF label="Product" w="220px"><input value={it.name} readOnly style={{...inp,background:C.panel,color:C.sub}} placeholder="Auto-filled"/></FF>
             <FF label="Qty" w="70px"><input type="number" min={1} value={it.qty} onChange={e=>updItem(idx,"qty",e.target.value)} style={inp}/></FF>
             {form.items.length>1&&<button onClick={()=>rmItem(idx)} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:11,fontWeight:600,cursor:"pointer",marginBottom:0,flexShrink:0}}>{"\u00D7"} Remove</button>}
@@ -1588,7 +1614,7 @@ function InventoryModule({setToast,currentNav}){
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OTHER VIEWS (compact) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function CommandView({go}){const kp=useMemo(()=>({pen:CASES.filter(c=>c.status==="pending_contact").length,sch:CASES.filter(c=>c.status==="scheduled").length,rp:CASES.filter(c=>c.status==="return_pending").length,ci:CASES.filter(c=>c.status==="checked_in").length}),[]);return (<><div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Kpi label="Total Cases" value={CASES.length} color={C.accent}/><Kpi label="Pending Contact" value={kp.pen} color={C.gray} onClick={()=>go("refresh.queue")}/><Kpi label="Scheduled" value={kp.sch} color={C.cyan}/><Kpi label="Returns" value={kp.rp} color={C.red} alert onClick={()=>go("returns")}/><Kpi label="Checked In" value={kp.ci} color={C.green}/></div><SH color={C.cyan} badge={`${TECHS.length} techs`}>Technician Workload</SH><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:8}}>{TECHS.map(t=>{const a=CASES.filter(c=>c.tech===t.name).filter(c=>!["closed","checked_in"].includes(c.status));return (<div key={t.id} onClick={()=>go("refresh.techs")} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,cursor:"pointer"}}><div style={{fontSize:12.5,fontWeight:600}}>{t.name}</div><div style={{fontSize:9.5,color:C.muted,marginBottom:6}}>{t.role} {"\u00B7"} {t.home}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",textAlign:"center"}}>{[{l:"Active",v:a.length,c:C.amber},{l:"Done",v:CASES.filter(c=>c.tech===t.name&&["deploy_complete","closed"].includes(c.status)).length,c:C.green},{l:"Avg",v:t.avg+"m",c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:16,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontSize:8,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</div></>);}
+function CommandView({go,cases}){const kp=useMemo(()=>({pen:cases.filter(c=>c.status==="pending_contact").length,sch:cases.filter(c=>c.status==="scheduled").length,rp:cases.filter(c=>c.status==="return_pending").length,ci:cases.filter(c=>c.status==="checked_in").length}),[cases]);return (<><div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Kpi label="Total Cases" value={cases.length} color={C.accent}/><Kpi label="Pending Contact" value={kp.pen} color={C.gray} onClick={()=>go("refresh.queue")}/><Kpi label="Scheduled" value={kp.sch} color={C.cyan}/><Kpi label="Returns" value={kp.rp} color={C.red} alert onClick={()=>go("returns")}/><Kpi label="Checked In" value={kp.ci} color={C.green}/></div><SH color={C.cyan} badge={`${TECHS.length} techs`}>Technician Workload</SH><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:8}}>{TECHS.map(t=>{const a=cases.filter(c=>c.tech===t.name).filter(c=>!["closed","checked_in"].includes(c.status));return (<div key={t.id} onClick={()=>go("refresh.techs")} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,cursor:"pointer"}}><div style={{fontSize:12.5,fontWeight:600}}>{t.name}</div><div style={{fontSize:9.5,color:C.muted,marginBottom:6}}>{t.role} {"\u00B7"} {t.home}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",textAlign:"center"}}>{[{l:"Active",v:a.length,c:C.amber},{l:"Done",v:cases.filter(c=>c.tech===t.name&&["deploy_complete","closed"].includes(c.status)).length,c:C.green},{l:"Avg",v:t.avg+"m",c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:16,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontSize:8,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</div></>);}
 function QueueView({go,cases,onOpenCase,onOpenAsset}){
   const actionBtn={padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"};
   const caseIdSet=useMemo(()=>new Set(cases.map(cs=>cs.id).filter(Boolean)),[cases]);
@@ -2760,7 +2786,7 @@ function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
   </>);
 }
 
-function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
+function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_CASES,auditEvents=AUDIT_EVENTS}){
   const regAssets=assets;
   const today=useMemo(()=>new Date(toLocalISODate()+"T00:00:00"),[]);
   const mFmt=useMemo(()=>new Intl.DateTimeFormat("en-US",{month:"short"}),[]);
@@ -2771,7 +2797,7 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
   const parseAgeMonths=(a)=>{if(!a)return 0;const y=(a.match(/(\d+)\s*yr/)||[])[1];const mo=(a.match(/(\d+)\s*mo/)||[])[1];return (Number(y)||0)*12+(Number(mo)||0);};
 
   const regAssigned=useMemo(()=>regAssets.filter(a=>a.status==="assigned"),[regAssets]);
-  const activeRefreshCases=useMemo(()=>CASES.filter(c=>!["closed","checked_in"].includes(c.status)),[]);
+  const activeRefreshCases=useMemo(()=>cases.filter(c=>!["closed","checked_in"].includes(c.status)),[cases]);
   const leaseWindows=useMemo(()=>{
     // AMS exports map WarrantyExpiryDate → both we and le. Use we as primary; fall back to le for seed assets.
     const rows=regAssets.map(a=>daysUntil(a.we&&a.we!=="\u2014"?a.we:a.le)).filter(v=>v!==null);
@@ -2786,44 +2812,44 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
   const reservedInventory=useMemo(()=>SEED_BK.filter(b=>["submitted","pending_approval","approved"].includes(b.status)).reduce((sum,b)=>sum+b.items.reduce((s,it)=>s+it.qty,0),0),[]);
   const complianceExceptions=useMemo(()=>regAssets.filter(a=>a.intune==="Non-compliant").length,[regAssets]);
   const avgRefreshCycleDays=useMemo(()=>Math.round((TECHS.reduce((a,t)=>a+t.avg,0)/TECHS.length)*0.28*10)/10,[]);
-  const returnsPending=useMemo(()=>CASES.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[regAssets]);
+  const returnsPending=useMemo(()=>cases.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[cases,regAssets]);
 
   const refreshByMonth=useMemo(()=>{
     const map={};
-    CASES.filter(c=>c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    cases.filter(c=>c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
     const keys=Object.keys(map).sort();
     return keys.map(k=>({k,l:monthLabel(k),v:map[k]}));
-  },[]);
+  },[cases]);
   const refreshByOffice=useMemo(()=>{
     const map={};
-    CASES.forEach(c=>{const k=c.office.split(" (")[0];map[k]=(map[k]||0)+1;});
+    cases.forEach(c=>{const k=c.office.split(" (")[0];map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
-  },[]);
+  },[cases]);
   const stageBreakdown=useMemo(()=>{
     const map={};
-    CASES.forEach(c=>{map[c.status]=(map[c.status]||0)+1;});
+    cases.forEach(c=>{map[c.status]=(map[c.status]||0)+1;});
     return Object.entries(map).map(([k,v])=>({k,v,l:RF_S[k]?.s||k}));
-  },[]);
-  const overdueRefreshes=useMemo(()=>CASES.filter(c=>c.dte<=30&&!["closed","checked_in","deploy_complete"].includes(c.status)).length,[]);
+  },[cases]);
+  const overdueRefreshes=useMemo(()=>cases.filter(c=>c.dte<=30&&!["closed","checked_in","deploy_complete"].includes(c.status)).length,[cases]);
   const completionTrend=useMemo(()=>{
     const map={};
-    CASES.filter(c=>["deploy_complete","checked_in","closed"].includes(c.status)&&c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    cases.filter(c=>["deploy_complete","checked_in","closed"].includes(c.status)&&c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
-  },[]);
+  },[cases]);
   const returnTrend=useMemo(()=>{
     const map={};
-    AUDIT_EVENTS.filter(e=>["return_received","lease_return"].includes(e.type)).forEach(e=>{const k=e.ts.slice(0,7);map[k]=(map[k]||0)+1;});
+    auditEvents.filter(e=>["return_received","lease_return"].includes(e.type)).forEach(e=>{const k=e.ts.slice(0,7);map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
-  },[]);
+  },[auditEvents]);
 
   const techPerf=useMemo(()=>TECHS.map(t=>{
-    const completed=CASES.filter(c=>c.tech===t.name&&["deploy_complete","checked_in","closed"].includes(c.status)).length;
-    const provisioning=AUDIT_EVENTS.filter(e=>e.type==="provisioning"&&e.by===t.name).length;
-    const shipped=AUDIT_EVENTS.filter(e=>e.type==="shipment"&&e.by===t.name).length;
-    const returnsDone=CASES.filter(c=>c.tech===t.name&&["checked_in","closed"].includes(c.status)).length;
-    const returnsTotal=CASES.filter(c=>c.tech===t.name&&["return_pending","checked_in","closed"].includes(c.status)).length||1;
+    const completed=cases.filter(c=>c.tech===t.name&&["deploy_complete","checked_in","closed"].includes(c.status)).length;
+    const provisioning=auditEvents.filter(e=>e.type==="provisioning"&&e.by===t.name).length;
+    const shipped=auditEvents.filter(e=>e.type==="shipment"&&e.by===t.name).length;
+    const returnsDone=cases.filter(c=>c.tech===t.name&&["checked_in","closed"].includes(c.status)).length;
+    const returnsTotal=cases.filter(c=>c.tech===t.name&&["return_pending","checked_in","closed"].includes(c.status)).length||1;
     return {name:t.name,completed,provisioning,shipped,avg:t.avg,returnRate:Math.round((returnsDone/returnsTotal)*100)};
-  }),[]);
+  }),[cases,auditEvents]);
 
   const inventoryByModel=useMemo(()=>[...INV].sort((a,b)=>b.q-a.q).slice(0,10).map(i=>({label:i.n,v:i.q})),[]);
   const agingStock=useMemo(()=>{
@@ -2872,18 +2898,18 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
       {m:"Dec",v:Math.round(q4*0.33)},
     ];
   },[]);
-  const leaseBacklog=useMemo(()=>regAssets.filter(a=>a.status==="pending_return").length+CASES.filter(c=>c.status==="return_pending").length,[regAssets]);
+  const leaseBacklog=useMemo(()=>regAssets.filter(a=>a.status==="pending_return").length+cases.filter(c=>c.status==="return_pending").length,[cases,regAssets]);
   const replacementForecast=useMemo(()=>leaseWindows.d90+Math.round(WAVES.reduce((a,w)=>a+w.gb16,0)*0.35),[leaseWindows]);
 
   const risk=useMemo(()=>{
-    const missingTracking=CASES.filter(c=>c.status==="return_pending").length;
+    const missingTracking=cases.filter(c=>c.status==="return_pending").length;
     const unassigned=regAssets.filter(a=>a.status==="assigned"&&(a.user==="\u2014"||!a.user)).length;
     const stuck=regAssets.filter(a=>["pending_return","repair","in_transit"].includes(a.status)).length;
     const unreturnedLeased=regAssets.filter(a=>a.status==="pending_return"&&(daysUntil(a.le)||0)<0).length;
     const incomplete=regAssets.filter(a=>!a.po||!a.pd||!a.we).length;
-    const auditExceptions=AUDIT_EVENTS.filter(e=>e.type==="compliance"||e.detail.toLowerCase().includes("escalation")).length;
+    const auditExceptions=auditEvents.filter(e=>e.type==="compliance"||e.detail.toLowerCase().includes("escalation")).length;
     return {missingTracking,unassigned,stuck,unreturnedLeased,incomplete,auditExceptions};
-  },[regAssets,today]);
+  },[cases,auditEvents,regAssets,today]);
 
   const maxOf=(arr,key)=>Math.max(1,...arr.map(x=>x[key]));
   const maxRefresh=maxOf(refreshByMonth,"v");
@@ -2943,6 +2969,7 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
         </table>
       </div>
     </Panel>
+    <ExecutiveTeamPerformanceSection C={C} MN={MN} SH={SH} Kpi={Kpi}/>
 
     <SH color={C.purple}>Inventory & Procurement Analytics</SH>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
@@ -2991,7 +3018,7 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
   </>);
 }
 
-function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
+function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
   const regAssets=assets;
   const weekdays=["Mon","Tue","Wed","Thu","Fri"];
   const startOfWeek=(d)=>{const x=new Date(`${toLocalISODate(d)}T00:00:00`);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x;};
@@ -3007,7 +3034,7 @@ function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=
 
   const tasks=useMemo(()=>{
     const out=[];
-    CASES.filter(c=>c.tech&&techNames.includes(c.tech)&&c.sd).forEach(c=>{
+    cases.filter(c=>c.tech&&techNames.includes(c.tech)&&c.sd).forEach(c=>{
       const d=parseYmd(c.sd);const i=idxByDate(d);if(i===null)return;
       out.push({id:`RF-${c.id}`,tech:c.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${c.id}`,ref:c.user,module:"refresh.queue"});
     });
@@ -3029,7 +3056,7 @@ function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=
       out.push({id:`BK-${b.id}`,tech,day:i,type:"inventory_prep",time:"11:00",title:"Inventory prep for booking",ref:b.id,module:"inventory.stock"});
     });
     return out;
-  },[auditEvents,monday,techNames]);
+  },[auditEvents,cases,monday,techNames]);
 
   const [selectedTech,setSelectedTech]=useState(TECHS[0]?.name||"");
   const [selectedCell,setSelectedCell]=useState({tech:TECHS[0]?.name||"",day:0});
@@ -3070,8 +3097,8 @@ function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=
     ];
   },[tasks]);
   const nearLease=useMemo(()=>regAssets.filter(a=>{if(!a.le||a.le==="\u2014")return false;const d=new Date(`${a.le}T00:00:00`);return !Number.isNaN(d.getTime())&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))<=90&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))>=0;}).length,[regAssets]);
-  const awaitingSchedule=useMemo(()=>CASES.filter(c=>!c.sd||!c.tech).length,[]);
-  const pendingReturns=useMemo(()=>CASES.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[regAssets]);
+  const awaitingSchedule=useMemo(()=>cases.filter(c=>!c.sd||!c.tech).length,[cases]);
+  const pendingReturns=useMemo(()=>cases.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[cases,regAssets]);
   const maxType=Math.max(1,...typeBreakdown.map(x=>x.v));
   const typeLabel={refresh:"Refresh",provisioning:"Provisioning",shipment:"Shipment",return:"Return",inventory_prep:"Inventory Prep"};
   const typeBg={refresh:C.accentSoft,provisioning:C.orangeSoft,shipment:C.cyanSoft,return:C.greenSoft,inventory_prep:C.purpleSoft};
@@ -3126,6 +3153,7 @@ function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=
       <button onClick={()=>go("automation")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:11,cursor:"pointer"}}>Open Lifecycle Automation</button>
       <button onClick={()=>go("inventory.stock")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>Open Inventory</button>
     </div>
+    <WorkloadPlannerAnalyticsSection C={C} MN={MN} SH={SH}/>
   </>);
 }
 
@@ -3192,10 +3220,11 @@ function TeamWorkloadView({go,cases,auditEvents}){
         );
       })}
     </div>
+    <TeamWorkloadInsightsSection C={C} MN={MN} SH={SH} Kpi={Kpi}/>
   </>);
 }
 
-function OperationsAlertsExceptionCenter({go,setToast,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
+function OperationsAlertsExceptionCenter({go,setToast,cases=SEED_CASES,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
   const regAssets=assets;
   const today=useMemo(()=>new Date(`${toLocalISODate()}T00:00:00`),[]);
   const parseYmd=(s)=>{if(!s||s==="—")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
@@ -3204,8 +3233,8 @@ function OperationsAlertsExceptionCenter({go,setToast,auditEvents=AUDIT_EVENTS,a
   const sevBg={Critical:C.redSoft,High:C.orangeSoft,Medium:C.amberSoft,Low:C.graySoft};
   const [selId,setSelId]=useState(null);
 
-  const refreshOverdue=useMemo(()=>CASES.filter(c=>c.sd&&["scheduled","provisioning","pending_contact","follow_up"].includes(c.status)&&daysLate(parseYmd(c.sd),0)>0).map(c=>({id:`AL-REF-${c.id}`,type:"Overdue Refresh Appointment",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Refresh Pipeline",days:daysLate(parseYmd(c.sd),0),sev:daysLate(parseYmd(c.sd),0)>7?"Critical":"High",action:"Escalate and reschedule",route:"refresh.queue"})),[today]);
-  const notReturned=useMemo(()=>CASES.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).map(c=>({id:`AL-RTN-${c.id}`,type:"Device Not Returned",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Return Processing",days:daysLate(parseYmd(c.sd),10),sev:daysLate(parseYmd(c.sd),10)>20?"Critical":"High",action:"Issue return escalation + manager notice",route:"returns"})),[today]);
+  const refreshOverdue=useMemo(()=>cases.filter(c=>c.sd&&["scheduled","provisioning","pending_contact","follow_up"].includes(c.status)&&daysLate(parseYmd(c.sd),0)>0).map(c=>({id:`AL-REF-${c.id}`,type:"Overdue Refresh Appointment",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Refresh Pipeline",days:daysLate(parseYmd(c.sd),0),sev:daysLate(parseYmd(c.sd),0)>7?"Critical":"High",action:"Escalate and reschedule",route:"refresh.queue"})),[cases,today]);
+  const notReturned=useMemo(()=>cases.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).map(c=>({id:`AL-RTN-${c.id}`,type:"Device Not Returned",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Return Processing",days:daysLate(parseYmd(c.sd),10),sev:daysLate(parseYmd(c.sd),10)>20?"Critical":"High",action:"Issue return escalation + manager notice",route:"returns"})),[cases,today]);
   const stuckState=useMemo(()=>regAssets.filter(a=>["pending_return","repair","in_transit","reserved"].includes(a.status)).map(a=>{const days=daysLate(parseYmd(a.seen||a.pd),30);if(days<=0)return null;return {id:`AL-STK-${a.tag}`,type:"Asset Stuck in Lifecycle State",asset:a.tag,user:a.user||"\u2014",tech:"\u2014",source:"Asset Registry",days,sev:days>60?"Critical":"Medium",action:`Review ${a.status} queue and clear blocker`,route:"registry"};}).filter(Boolean),[regAssets,today]);
   const shortages=useMemo(()=>INV.filter(i=>i.q<i.r).map(i=>({id:`AL-INV-${i.s}`,type:"Inventory Shortage",asset:i.s,user:null,tech:"Inventory Team",source:"Inventory",days:Math.max(1,i.r-i.q),sev:i.q===0?"High":"Medium",action:"Create replenishment PO / reallocate stock",route:"inventory.stock"})),[]);
   const noTracking=useMemo(()=>auditEvents.filter(e=>e.type==="shipment"&&(!e.detail.toLowerCase().includes("tracking")&&!e.detail.toLowerCase().includes("label"))).map(e=>({id:`AL-SHP-${e.id}`,type:"Shipment Without Tracking",asset:e.asset,user:e.user,tech:e.by||null,source:"Shipment Tracking",days:Math.max(1,daysLate(new Date(e.ts.replace(" ","T")),1)),sev:"High",action:"Attach carrier tracking ID and notify user",route:"audit"})),[auditEvents,today]);
@@ -3216,13 +3245,13 @@ function OperationsAlertsExceptionCenter({go,setToast,auditEvents=AUDIT_EVENTS,a
   const priCounts=useMemo(()=>({Critical:alerts.filter(a=>a.sev==="Critical").length,High:alerts.filter(a=>a.sev==="High").length,Medium:alerts.filter(a=>a.sev==="Medium").length,Low:alerts.filter(a=>a.sev==="Low").length}),[alerts]);
 
   const sla=useMemo(()=>{
-    const breachContact=CASES.filter(c=>["pending_contact","follow_up"].includes(c.status)&&c.dte<=90).length;
-    const breachShip=CASES.filter(c=>["scheduled","provisioning"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),3)>0).length;
-    const breachReturn=CASES.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).length;
+    const breachContact=cases.filter(c=>["pending_contact","follow_up"].includes(c.status)&&c.dte<=90).length;
+    const breachShip=cases.filter(c=>["scheduled","provisioning"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),3)>0).length;
+    const breachReturn=cases.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).length;
     const avgCycle=Math.round((TECHS.reduce((a,t)=>a+t.avg,0)/TECHS.length)*0.28*10)/10;
-    const offenders=TECHS.map(t=>({name:t.name,v:CASES.filter(c=>c.tech===t.name&&["return_pending","follow_up","scheduled"].includes(c.status)).length})).sort((a,b)=>b.v-a.v).slice(0,3);
+    const offenders=TECHS.map(t=>({name:t.name,v:cases.filter(c=>c.tech===t.name&&["return_pending","follow_up","scheduled"].includes(c.status)).length})).sort((a,b)=>b.v-a.v).slice(0,3);
     return {breachContact,breachShip,breachReturn,avgCycle,offenders};
-  },[today]);
+  },[cases,today]);
 
   return (<>
     <SH color={C.red} badge="Operations Alerts & Exception Center">Exception Dashboard</SH>
@@ -4191,7 +4220,7 @@ const validateImportChunked=async(rows,onProgress)=>{
 };
 
 // â”€â”€â”€ AMS IMPORT MODULE (UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivity,setAssetActivity,prePromoteActivityRef}){
+function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivity,setAssetActivity,prePromoteActivityRef,onResetToDemo}){
   const [stage,setStage]=useState("upload");// upload|parsing|staging|promoted
   const [staging,setStaging]=useState([]);
   const [validation,setValidation]=useState(null);
@@ -4287,10 +4316,13 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
   const resetToDemo=()=>{
     if(prePromoteRef)prePromoteRef.current=null;
     if(prePromoteActivityRef)prePromoteActivityRef.current=null;
-    setAssets(SEED_REG_ASSETS);
-    if(setAssetActivity)setAssetActivity(buildInitialAssetActivity(SEED_REG_ASSETS));
+    if(onResetToDemo)onResetToDemo();
+    else{
+      setAssets(SEED_REG_ASSETS);
+      if(setAssetActivity)setAssetActivity(buildInitialAssetActivity(SEED_REG_ASSETS));
+    }
     resetImportState("upload");
-    setToast("Reset to demo dataset");
+    if(!onResetToDemo)setToast("Reset to demo dataset");
   };
 
   // Staging preview with pagination
@@ -4430,14 +4462,14 @@ export default function ITAMPlatform(){
   const [hover,setHover]=useState(null);
   const [toast,setToast]=useState(null);
   const [anim,setAnim]=useState(false);
-  const [auditEvents,setAuditEvents]=useState(AUDIT_EVENTS);
+  const [auditEvents,setAuditEvents]=useState(getInitialAuditEvents);
   const [theme,setTheme]=useState("dark");
-  const [assets,setAssets]=useState(SEED_REG_ASSETS);
-  const [assetActivity,setAssetActivity]=useState(()=>buildInitialAssetActivity(SEED_REG_ASSETS));
+  const [assets,setAssets]=useState(getInitialAssets);
+  const [assetActivity,setAssetActivity]=useState(getInitialAssetActivity);
   // Snapshot of assets before last full-replace import. Lives here (not in AmsImportModule) so it survives nav changes.
   const prePromoteRef=useRef(null);
   const prePromoteActivityRef=useRef(null);
-  const [cases,setCases]=useState(SEED_CASES);
+  const [cases,setCases]=useState(getInitialCases);
   const [casePrefill,setCasePrefill]=useState(null);
   const [caseSelection,setCaseSelection]=useState(null);
   const [selectedAssetTag,setSelectedAssetTag]=useState(null);
@@ -4446,6 +4478,26 @@ export default function ITAMPlatform(){
 
   useEffect(()=>{setAnim(false);const t=setTimeout(()=>setAnim(true),40);return ()=>clearTimeout(t);},[nav]);
   useEffect(()=>{const safeNav=resolveRoleSafeNav(currentRole,nav);if(nav!==safeNav)setNav(safeNav);},[currentRole,defaultNavId,nav]);
+  useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.assets,assets);},[assets]);
+  useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.assetActivity,assetActivity);},[assetActivity]);
+  useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.cases,cases);},[cases]);
+  useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.auditEvents,auditEvents);},[auditEvents]);
+
+  const resetToDemoData=useCallback(()=>{
+    clearStoredDatasets([
+      ITAM_STORAGE_KEYS.assets,
+      ITAM_STORAGE_KEYS.assetActivity,
+      ITAM_STORAGE_KEYS.cases,
+      ITAM_STORAGE_KEYS.auditEvents,
+    ]);
+    prePromoteRef.current=null;
+    prePromoteActivityRef.current=null;
+    setAssets(SEED_REG_ASSETS);
+    setAssetActivity(buildInitialAssetActivity(SEED_REG_ASSETS));
+    setCases(SEED_CASES);
+    setAuditEvents(AUDIT_EVENTS);
+    setToast("Reset to demo dataset");
+  },[]);
 
   const goSafe=useCallback((targetNavId)=>{
     const safeNavId=resolveRoleSafeNav(currentRole,targetNavId||defaultNavId);
@@ -4578,27 +4630,27 @@ export default function ITAMPlatform(){
         </header>
 
         <main style={{flex:1,padding:"14px 20px",overflowY:"auto",opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(5px)",transition:"all 0.2s"}}>
-          {nav==="executive"&&<ExecutiveCommandCenter go={goSafe} setToast={setToast} assets={assets}/>}
+          {nav==="executive"&&<ExecutiveCommandCenter go={goSafe} setToast={setToast} assets={assets} cases={cases} auditEvents={auditEvents}/>}
           {nav==="home.queue"&&<Placeholder id="home.queue" goHome={goHome}/>}
-          {(nav==="ops"||nav==="ops.dashboard")&&<OperationsWorkloadPlanner go={goSafe} setToast={setToast} auditEvents={auditEvents} assets={assets}/>}
+          {(nav==="ops"||nav==="ops.dashboard")&&<OperationsWorkloadPlanner go={goSafe} setToast={setToast} cases={cases} auditEvents={auditEvents} assets={assets}/>}
           {nav==="ops.workload"&&<TeamWorkloadView go={goSafe} cases={cases} auditEvents={auditEvents}/>}
-          {nav==="alerts"&&<OperationsAlertsExceptionCenter go={goSafe} setToast={setToast} auditEvents={auditEvents} assets={assets}/>}
-          {(nav==="inventory.stock"||nav==="inventory.bookings")&&<InventoryModule setToast={setToast} currentNav={nav}/>}
+          {nav==="alerts"&&<OperationsAlertsExceptionCenter go={goSafe} setToast={setToast} cases={cases} auditEvents={auditEvents} assets={assets}/>}
+          {(nav==="inventory.stock"||nav==="inventory.bookings")&&<InventoryModule setToast={setToast} currentNav={nav} assets={assets}/>}
           {nav==="onboarding"&&<OnboardingModule setToast={setToast} go={goSafe} auditEvents={auditEvents} setAuditEvents={setAuditEvents}/>}
           {nav==="offboarding"&&<OffboardingModule setToast={setToast} go={goSafe}/>}
           {nav==="returns"&&<ReturnQueueModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
           {nav==="returns.lease"&&<Placeholder id="returns.lease" goHome={goHome}/>}
           {nav==="breakfix"&&<BreakFixModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
-          {nav==="refresh.command"&&<CommandView go={goSafe}/>}
+          {nav==="refresh.command"&&<CommandView go={goSafe} cases={cases}/>}
           {nav==="refresh.queue"&&<QueueView go={goSafe} cases={cases} onOpenCase={openCaseFromAsset} onOpenAsset={openAssetFromCase}/>}
-          {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=CASES.filter(c=>c.tech===t.name&&!["closed","checked_in"].includes(c.status));return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
+          {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=cases.filter(c=>c.tech===t.name&&!["closed","checked_in"].includes(c.status));return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
           {nav==="refresh.waves"&&<WavePlannerModule setToast={setToast} go={goSafe}/>}
 {(nav==="cases"||nav==="cases.all"||nav==="cases.create")&&<CaseManagementModule setToast={setToast} go={goSafe} cases={cases} setCases={setCases} prefill={casePrefill} selectedCaseId={caseSelection} onConsumeSelection={clearCaseSelection} onConsumePrefill={clearCasePrefill} onCaseTransition={onCaseTransition} currentNav={nav} onOpenAsset={openAssetFromCase} assets={assets} onUpdateAsset={updateAssetByTag}/>}
           {nav==="registry"&&<AssetRegistryModule setToast={setToast} assets={assets} cases={cases} setCasePrefill={setCasePrefill} onOpenCase={openCaseFromAsset} go={goSafe} selectedAssetTag={selectedAssetTag} onClearAssetSelection={clearAssetSelection} onUpdateAsset={updateAssetByTag} assetActivity={assetActivity}/>}
           {nav==="procurement"&&<ProcurementModule setToast={setToast} go={goSafe}/>}
           {nav==="audit"&&<AuditModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase} auditEvents={auditEvents}/>}
           {(nav==="admin"||nav==="admin.config")&&<AdminModule setToast={setToast}/>}
-          {nav==="admin.import"&&<AmsImportModule setToast={setToast} assets={assets} setAssets={setAssets} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef}/>}
+      {nav==="admin.import"&&<AmsImportModule setToast={setToast} assets={assets} setAssets={setAssets} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef} onResetToDemo={resetToDemoData}/>}
           {nav==="automation"&&<LifecycleAutomationModule setToast={setToast} go={goSafe} onAutomationEvent={onAutomationEvent} onOpenAsset={openAssetFromCase}/>}
         </main>
       </div>
