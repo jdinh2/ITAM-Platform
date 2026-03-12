@@ -2148,7 +2148,7 @@ const WAVES=[
 const WAVE_ST={planning:{l:"Planning",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},active:{l:"Active",c:C.green,bg:C.greenSoft,bd:C.greenBorder},scheduled:{l:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},completed:{l:"Completed",c:C.gray,bg:C.graySoft,bd:C.grayBorder},at_risk:{l:"At Risk",c:C.red,bg:C.redSoft,bd:C.redBorder}};
 const WvChip=({s})=>{const x=WAVE_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
 
-function WavePlannerModule({setToast,go}){
+function WavePlannerModule({setToast,go,cases=SEED_CASES}){
   const [sel,setSel]=useState(null);
   const [stF,setStF]=useState("all");
 
@@ -2248,8 +2248,8 @@ function WavePlannerModule({setToast,go}){
         {/* Associated refresh cases (simulated) */}
         <div style={{padding:"10px 18px"}}>
           <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>REFRESH CASES IN WAVE</div>
-          {CASES.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).length>0?
-            CASES.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}} onClick={()=>{setToast(`Opening ${c.id}`);if(go)go("refresh.queue");}}>
+          {cases.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).length>0?
+            cases.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}} onClick={()=>{setToast(`Opening ${c.id}`);if(go)go("refresh.queue");}}>
               <div><span style={{fontFamily:MN,color:C.accent,fontWeight:600,fontSize:10.5,marginRight:5}}>{c.id}</span><span style={{fontSize:11.5}}>{c.user}</span></div>
               <RfChip s={c.status}/>
             </div>))
@@ -2822,7 +2822,7 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
   },[cases]);
   const refreshByOffice=useMemo(()=>{
     const map={};
-    cases.forEach(c=>{const k=c.office.split(" (")[0];map[k]=(map[k]||0)+1;});
+    cases.forEach(c=>{const officeLabel=(c.office||c.locationId||"Unknown Office");const k=String(officeLabel).split(" (")[0];map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
   },[cases]);
   const stageBreakdown=useMemo(()=>{
@@ -2907,7 +2907,7 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
     const stuck=regAssets.filter(a=>["pending_return","repair","in_transit"].includes(a.status)).length;
     const unreturnedLeased=regAssets.filter(a=>a.status==="pending_return"&&(daysUntil(a.le)||0)<0).length;
     const incomplete=regAssets.filter(a=>!a.po||!a.pd||!a.we).length;
-    const auditExceptions=auditEvents.filter(e=>e.type==="compliance"||e.detail.toLowerCase().includes("escalation")).length;
+    const auditExceptions=auditEvents.filter(e=>e.type==="compliance"||String(e.detail||"").toLowerCase().includes("escalation")).length;
     return {missingTracking,unassigned,stuck,unreturnedLeased,incomplete,auditExceptions};
   },[cases,auditEvents,regAssets,today]);
 
@@ -3416,6 +3416,14 @@ const SEED_CASES=[
 
 // â”€â”€â”€ CASE HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _caseSeq=12;
+const syncCaseSeqWithCases=(cases=[])=>{
+  const maxSeen=cases.reduce((maxValue,cs)=>{
+    const match=String(cs?.id||"").match(/^CS-\d{4}-(\d+)$/);
+    const value=match?parseInt(match[1],10):0;
+    return Math.max(maxValue,Number.isFinite(value)?value:0);
+  },0);
+  _caseSeq=Math.max(_caseSeq,maxSeen);
+};
 const nextCaseId=()=>{_caseSeq++;return `CS-${new Date().getFullYear()}-${String(_caseSeq).padStart(4,"0")}`;};
 const nowTs=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
 const addEvent=(cs,type,by,detail)=>({...cs,events:[...cs.events,{ts:nowTs(),type,by,detail}]});
@@ -4219,6 +4227,282 @@ const validateImportChunked=async(rows,onProgress)=>{
   return {errors,warnings,dupIds,dupSerials,blankStatuses,invalidDates,unknownStatuses,missingIds,validRows,errorRows,rejectedCount:rows.length-validRows.length,skippedDuplicates:skippedRows.size,duplicateAssetIds,duplicateSerials};
 };
 
+const REFRESH_IMPORT_HEADER_ALIASES={
+  ID:["id"],
+  EmployeeName:["employee name","employee","user"],
+  EmployeeEmail:["employee email","email"],
+  EmployeePhone:["employee phone #","employee phone %23","employee phone","phone","phone #"],
+  AppointmentTitle:["appointment title","appointment"],
+  Status:["status"],
+  Technician:["amwins technician","technician","tech"],
+  OldSerialNumber:["old serial number","old serial","old serial #"],
+  SerialNumber:["serial number","serial","serial #","new serial number"],
+  OperatingCompany:["operating company","opco"],
+  StartDateTime:["start date/time","start datetime","start date"],
+  EndDateTime:["end date/time","end datetime","end date"],
+  Location:["location"],
+  ShippingAddress:["shipping address","ship address"],
+  TrackingNumber:["tracking number","tracking","tracking #"],
+  Modified:["modified"],
+  Notes:["notes"],
+  Created:["created"],
+  CreatedBy:["created by"],
+  ModifiedBy:["modified by"],
+};
+const REFRESH_IMPORT_STATUS_MAP_RAW={
+  "Pending Scheduling":{caseStatus:"appointment_pending",appointmentStatus:"not_scheduled"},
+  "Scheduled":{caseStatus:"appointment_booked",appointmentStatus:"scheduled"},
+  "Completed":{caseStatus:"appointment_complete",appointmentStatus:"completed"},
+  "Follow-Up":{caseStatus:"contacted",appointmentStatus:"not_scheduled"},
+  "Canceled":{caseStatus:"canceled",appointmentStatus:"not_scheduled"},
+};
+const REFRESH_IMPORT_STATUS_MAP={};
+Object.entries(REFRESH_IMPORT_STATUS_MAP_RAW).forEach(([k,v])=>{REFRESH_IMPORT_STATUS_MAP[normalizeLookupKey(k)]=v;});
+const getAliasedValue=(headerIndex,vals,aliasMap,col)=>{
+  const candidates=aliasMap[col]||[col];
+  for(const candidate of candidates){
+    const idx=headerIndex[normalizeLookupKey(candidate)];
+    if(idx!=null&&idx>=0)return String(vals[idx]||"").trim();
+  }
+  return "";
+};
+function normalizeDateTime(raw){
+  if(raw==null||String(raw).trim()==="")return "";
+  const s=String(raw).trim();
+  if(/^\d{5}(\.\d+)?$/.test(s)){
+    const serial=Math.floor(Number(s));
+    if(Number.isFinite(serial)&&serial>59){
+      const excelEpoch=new Date(Date.UTC(1899,11,30));
+      excelEpoch.setUTCDate(excelEpoch.getUTCDate()+serial);
+      return `${excelEpoch.getUTCFullYear()}-${String(excelEpoch.getUTCMonth()+1).padStart(2,"0")}-${String(excelEpoch.getUTCDate()).padStart(2,"0")} 00:00`;
+    }
+  }
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2}))?/);
+  if(iso){
+    const year=parseInt(iso[1],10),month=parseInt(iso[2],10),day=parseInt(iso[3],10);
+    if(!isValidYmd(year,month,day))return null;
+    return `${iso[1]}-${iso[2]}-${iso[3]} ${String(parseInt(iso[4]||"0",10)).padStart(2,"0")}:${String(parseInt(iso[5]||"0",10)).padStart(2,"0")}`;
+  }
+  const us=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?:\s*([AP]M))?)?$/i);
+  if(us){
+    const month=parseInt(us[1],10),day=parseInt(us[2],10);
+    const year=us[3].length===2?2000+parseInt(us[3],10):parseInt(us[3],10);
+    if(!isValidYmd(year,month,day))return null;
+    let hour=parseInt(us[4]||"0",10);
+    const minute=parseInt(us[5]||"0",10);
+    const suffix=(us[6]||"").toUpperCase();
+    if(suffix){
+      if(hour<1||hour>12)return null;
+      if(suffix==="AM"&&hour===12)hour=0;
+      if(suffix==="PM"&&hour!==12)hour+=12;
+    }else if(hour>23||minute>59){
+      return null;
+    }
+    return `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")} ${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`;
+  }
+  return null;
+}
+const extractPrimaryTrackingNumber=(raw)=>{
+  const matches=String(raw||"").match(/\b[A-Z0-9]{10,22}\b/g);
+  return matches?.[0]||"";
+};
+const normalizeRefreshImportStatus=(raw)=>{
+  const key=normalizeLookupKey(raw);
+  return key?REFRESH_IMPORT_STATUS_MAP[key]||null:null;
+};
+const findAssetForImportValue=(assets,raw)=>{
+  const key=normalizeAssetKey(raw);
+  if(!key)return null;
+  return assets.find(asset=>normalizeAssetKey(asset.tag)===key||normalizeAssetKey(asset.sn)===key)||null;
+};
+const buildRefreshImportNotes=(row)=>[
+  row.notes||"",
+  row.appointmentTitle?`Appointment Title: ${row.appointmentTitle}`:"",
+  row.shippingAddress?`Shipping Address: ${row.shippingAddress}`:"",
+  row.trackingRaw?`Tracking: ${row.trackingRaw}`:"",
+  row.rawOldSerial&&!row.assetLinked?`Imported old serial (unmatched): ${row.rawOldSerial}`:"",
+  row.rawNewSerial&&!row.replacementLinked?`Imported replacement serial (unmatched): ${row.rawNewSerial}`:"",
+  row.employeeEmail?`Employee Email: ${row.employeeEmail}`:"",
+  row.employeePhone?`Employee Phone: ${row.employeePhone}`:"",
+].map(part=>String(part||"").trim()).filter(Boolean).join("\n");
+const normalizeRefreshImportRow=(headers,vals,assets=[])=>{
+  const headerIndex=buildHeaderIndex(headers);
+  const sourceId=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"ID");
+  const employeeName=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"EmployeeName");
+  const employeeEmail=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"EmployeeEmail");
+  const employeePhone=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"EmployeePhone");
+  const appointmentTitle=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"AppointmentTitle");
+  const rawStatus=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Status");
+  const statusMeta=normalizeRefreshImportStatus(rawStatus);
+  const technician=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Technician");
+  const rawOldSerial=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"OldSerialNumber");
+  const rawNewSerial=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"SerialNumber");
+  const operatingCompany=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"OperatingCompany");
+  const rawStart=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"StartDateTime");
+  const rawEnd=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"EndDateTime");
+  const rawLocation=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Location");
+  const shippingAddress=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"ShippingAddress");
+  const trackingRaw=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"TrackingNumber");
+  const rawModified=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Modified");
+  const notes=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Notes");
+  const rawCreated=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"Created");
+  const createdBy=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"CreatedBy");
+  const modifiedBy=getAliasedValue(headerIndex,vals,REFRESH_IMPORT_HEADER_ALIASES,"ModifiedBy");
+  const startAt=normalizeDateTime(rawStart);
+  const endAt=normalizeDateTime(rawEnd);
+  const createdAt=normalizeDateTime(rawCreated);
+  const modifiedAt=normalizeDateTime(rawModified);
+  const linkedAsset=findAssetForImportValue(assets,rawOldSerial);
+  const linkedReplacement=findAssetForImportValue(assets,rawNewSerial);
+  const locationId=normalizeLocation(rawLocation||operatingCompany);
+  const row={
+    type:"refresh",
+    sourceId,
+    status:statusMeta?.caseStatus||"",
+    priority:"high",
+    created:(createdAt||startAt||`${toLocalISODate()} 00:00`).slice(0,10),
+    due:(startAt||endAt||"").slice(0,10),
+    tech:technician||"",
+    requestor:"Refresh Schedule Import",
+    userId:employeeName,
+    assetId:linkedAsset?.tag||rawOldSerial||"",
+    replacementId:linkedReplacement?.tag||"",
+    locationId:locationId==="\u2014"?"":locationId,
+    notes:"",
+    shipmentId:extractPrimaryTrackingNumber(trackingRaw),
+    shipmentCarrier:"",
+    shipmentStatus:"not_ready",
+    appointmentDate:startAt||"",
+    appointmentStatus:statusMeta?.appointmentStatus||"not_scheduled",
+    returnExpected:Boolean(rawOldSerial),
+    returnFollowUpStatus:statusMeta?.caseStatus==="appointment_complete"&&rawOldSerial?"pending":"not_started",
+    returnReceivedDate:"",
+    intakeCondition:"good",
+    intakeNotes:"",
+    intakeDisposition:"inventory",
+    ticketId:"",
+    procurementId:"",
+    outboundShipment:{...NULL_SHIPMENT},
+    returnShipment:{...NULL_SHIPMENT},
+    events:[
+      {ts:modifiedAt||createdAt||nowTs(),type:"created",by:createdBy||modifiedBy||"Refresh Schedule Import",detail:`Imported refresh schedule row${sourceId?` ${sourceId}`:""}`},
+      {ts:modifiedAt||createdAt||nowTs(),type:"note",by:"Refresh Schedule Import",detail:`Source status: ${rawStatus||"—"}${startAt?` · Start: ${startAt}`:""}${technician?` · Tech: ${technician}`:""}`},
+    ],
+    importSource:{type:"refresh_schedule",sourceId,rawStatus,oldSerial:rawOldSerial,newSerial:rawNewSerial,employeeEmail,employeePhone,operatingCompany,location:rawLocation,tracking:trackingRaw,shippingAddress,modifiedAt,createdAt,modifiedBy,createdBy},
+    appointmentTitle,
+    employeeEmail,
+    employeePhone,
+    operatingCompany,
+    shippingAddress,
+    trackingRaw,
+    rawStart,
+    rawEnd,
+    parsedStartAt:startAt,
+    parsedEndAt:endAt,
+    endAt:endAt||"",
+    rawOldSerial,
+    rawNewSerial,
+    assetLinked:Boolean(linkedAsset),
+    replacementLinked:Boolean(linkedReplacement),
+    _rawStatus:rawStatus,
+  };
+  row.notes=buildRefreshImportNotes(row);
+  return row;
+};
+const refreshDuplicateSignature=(row)=>[normalizeLookupKey(row.userId),row.appointmentDate,normalizeAssetKey(row.rawOldSerial||row.rawNewSerial)].join("|");
+const normalizeSourceIdKey=(value)=>normalizeLookupKey(String(value||""));
+const normalizeRefreshRowsChunked=async(headers,dataRows,assets,onProgress)=>{
+  const normalized=new Array(dataRows.length);
+  if(dataRows.length===0){onProgress?.(1);return normalized;}
+  for(let i=0;i<dataRows.length;i+=IMPORT_CHUNK_SIZE){
+    const end=Math.min(dataRows.length,i+IMPORT_CHUNK_SIZE);
+    for(let j=i;j<end;j++)normalized[j]=normalizeRefreshImportRow(headers,dataRows[j],assets);
+    onProgress?.(end/dataRows.length);
+    await yieldToUi();
+  }
+  return normalized;
+};
+const validateRefreshImportChunked=async(rows,existingCases,onProgress)=>{
+  const errors=[];const warnings=[];const skippedRows=new Set();
+  const seen=new Map();
+  const existingImportedIds=new Set((existingCases||[]).filter(cs=>cs?.importSource?.type==="refresh_schedule").map(cs=>normalizeSourceIdKey(cs.importSource?.sourceId)).filter(Boolean));
+  let missingEmployee=0,missingStatus=0,invalidDates=0,missingSerials=0,unknownStatuses=0,alreadyImported=0;
+  if(rows.length===0){onProgress?.(1);}
+  for(let i=0;i<rows.length;i+=IMPORT_CHUNK_SIZE){
+    const end=Math.min(rows.length,i+IMPORT_CHUNK_SIZE);
+    for(let idx=i;idx<end;idx++){
+      const row=rows[idx];
+      const line=idx+2;
+      if(!String(row.userId||"").trim()){errors.push({row:line,field:"Employee Name",msg:"Missing employee name"});missingEmployee++;}
+      if(!String(row._rawStatus||"").trim()){errors.push({row:line,field:"Status",msg:"Missing status"});missingStatus++;}
+      if(String(row._rawStatus||"").trim()&&!row.status){errors.push({row:line,field:"Status",msg:`Unmapped status requires review: "${row._rawStatus}"`});unknownStatuses++;}
+      if(row.rawStart&&row.parsedStartAt===null){errors.push({row:line,field:"Start Date/Time",msg:"Invalid start date/time"});invalidDates++;}
+      if(row.rawEnd&&row.parsedEndAt===null){errors.push({row:line,field:"End Date/Time",msg:"Invalid end date/time"});invalidDates++;}
+      if(row.appointmentDate&&row.endAt){
+        const startMs=new Date(`${row.appointmentDate.replace(" ","T")}:00`).getTime();
+        const endMs=new Date(`${row.endAt.replace(" ","T")}:00`).getTime();
+        if(Number.isFinite(startMs)&&Number.isFinite(endMs)&&endMs<startMs){errors.push({row:line,field:"End Date/Time",msg:"End date/time is before start date/time"});invalidDates++;}
+      }
+      if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()){errors.push({row:line,field:"Serial Number",msg:"Missing serials"});missingSerials++;}
+      const signature=refreshDuplicateSignature(row);
+      if(signature.replace(/\|/g,"")!==""){
+        if(seen.has(signature)){
+          warnings.push({row:line,field:"Duplicate",msg:`Duplicate row rejected from staging (${row.userId||"Unknown"} · ${row.appointmentDate||"No start"} · ${row.rawOldSerial||row.rawNewSerial||"No serial"})`});
+          skippedRows.add(line);
+        }else{
+          seen.set(signature,line);
+        }
+      }
+      const sourceKey=normalizeSourceIdKey(row.sourceId);
+      if(sourceKey&&existingImportedIds.has(sourceKey)){
+        warnings.push({row:line,field:"ID",msg:`Source row ${row.sourceId} already imported and will be skipped`});
+        skippedRows.add(line);
+        alreadyImported++;
+      }
+      if(!row.assetLinked&&row.rawOldSerial)warnings.push({row:line,field:"Old Serial Number",msg:`No matching asset found for ${row.rawOldSerial}`});
+      if(!row.replacementLinked&&row.rawNewSerial)warnings.push({row:line,field:"Serial Number",msg:`No matching replacement asset found for ${row.rawNewSerial}`});
+      if(!row.tech)warnings.push({row:line,field:"AmWINS Technician",msg:"No technician assigned"});
+    }
+    onProgress?.(rows.length?end/rows.length:1);
+    await yieldToUi();
+  }
+  const errorRows=new Set(errors.map(item=>item.row));
+  const validRows=rows.filter((_,i)=>!errorRows.has(i+2)&&!skippedRows.has(i+2));
+  return {errors,warnings,validRows,errorRows,rejectedCount:rows.length-validRows.length,skippedDuplicates:skippedRows.size,missingEmployee,missingStatus,invalidDates,missingSerials,unknownStatuses,alreadyImported,linkedAssets:validRows.filter(row=>row.assetLinked).length,linkedReplacements:validRows.filter(row=>row.replacementLinked).length};
+};
+const toPromotedRefreshCase=(row)=>({
+  id:nextCaseId(),
+  type:"refresh",
+  status:row.status,
+  priority:row.priority,
+  created:row.created,
+  due:row.due,
+  tech:row.tech,
+  requestor:row.requestor,
+  userId:row.userId,
+  assetId:row.assetId,
+  replacementId:row.replacementId,
+  locationId:row.locationId,
+  notes:row.notes,
+  shipmentId:row.shipmentId,
+  shipmentCarrier:row.shipmentCarrier,
+  shipmentStatus:row.shipmentStatus,
+  appointmentDate:row.appointmentDate,
+  appointmentStatus:row.appointmentStatus,
+  returnExpected:row.returnExpected,
+  returnFollowUpStatus:row.returnFollowUpStatus,
+  returnReceivedDate:row.returnReceivedDate,
+  intakeCondition:row.intakeCondition,
+  intakeNotes:row.intakeNotes,
+  intakeDisposition:row.intakeDisposition,
+  ticketId:row.ticketId,
+  procurementId:row.procurementId,
+  outboundShipment:{...row.outboundShipment},
+  returnShipment:{...row.returnShipment},
+  events:[...(row.events||[])],
+  importSource:{...(row.importSource||{})},
+});
+
 // â”€â”€â”€ AMS IMPORT MODULE (UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivity,setAssetActivity,prePromoteActivityRef,onResetToDemo}){
   const [stage,setStage]=useState("upload");// upload|parsing|staging|promoted
@@ -4454,6 +4738,211 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
   </>);
 }
 
+function RefreshScheduleImportModule({setToast,assets,cases,setCases,go,onResetToDemo}){
+  const [stage,setStage]=useState("upload");
+  const [staging,setStaging]=useState([]);
+  const [validation,setValidation]=useState(null);
+  const [parseProgress,setParseProgress]=useState(0);
+  const [fileName,setFileName]=useState("");
+  const [previewPage,setPreviewPage]=useState(0);
+  const [previewFilter,setPreviewFilter]=useState("all");
+  const [promotedCount,setPromotedCount]=useState(0);
+  const prePromoteCasesRef=useRef(null);
+  const PREVIEW_PAGE_SIZE=50;
+  const importedRefreshCount=useMemo(()=>cases.filter(cs=>cs?.importSource?.type==="refresh_schedule").length,[cases]);
+  const resetImportState=useCallback((nextStage="upload")=>{
+    setStage(nextStage);setStaging([]);setValidation(null);setParseProgress(0);setFileName("");setPreviewPage(0);setPreviewFilter("all");setPromotedCount(0);
+  },[]);
+  const previewData=useMemo(()=>{
+    let list=staging;
+    if(previewFilter!=="all")list=list.filter(row=>row.status===previewFilter);
+    return list;
+  },[staging,previewFilter]);
+  const totalPages=Math.max(1,Math.ceil(previewData.length/PREVIEW_PAGE_SIZE));
+  const pageData=previewData.slice(previewPage*PREVIEW_PAGE_SIZE,(previewPage+1)*PREVIEW_PAGE_SIZE);
+  const statusCounts=useMemo(()=>{const counts={};staging.forEach(row=>{counts[row.status]=(counts[row.status]||0)+1;});return counts;},[staging]);
+  const blockedReasonSummary=useMemo(()=>{
+    if(!validation?.errors?.length)return [];
+    const counts={};
+    validation.errors.forEach(issue=>{const key=String(issue.msg||issue.field||"Validation error").toLowerCase();counts[key]=(counts[key]||0)+1;});
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  },[validation]);
+  useEffect(()=>{setPreviewPage(p=>Math.min(p,totalPages-1));},[totalPages]);
+
+  const handleFile=(e)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    setFileName(file.name);setStage("parsing");setParseProgress(0);setStaging([]);setValidation(null);setPreviewFilter("all");setPreviewPage(0);
+    const reader=new FileReader();
+    reader.onerror=()=>{setStage("upload");setStaging([]);setValidation(null);setToast("File read failed. Check the file and try again.");};
+    reader.onload=async(evt)=>{
+      try{
+        const text=evt.target?.result;
+        if(!text){setStage("upload");setToast("File appears empty.");return;}
+        setParseProgress(20);
+        const rows=parseCSV(text);
+        if(rows.length<2){setToast("CSV has no data rows.");setStage("upload");return;}
+        setParseProgress(40);
+        const rawHeaders=rows[0].map(h=>h.replace(/^\uFEFF/,"").trim());
+        const dataRows=rows.slice(1);
+        setParseProgress(60);
+        const normalized=await normalizeRefreshRowsChunked(rawHeaders,dataRows,assets,(p)=>setParseProgress(60+Math.round(p*20)));
+        const v=await validateRefreshImportChunked(normalized,cases,(p)=>setParseProgress(80+Math.round(p*18)));
+        setParseProgress(100);
+        const valid=v.validRows||normalized.filter((_,i)=>!v.errorRows.has(i+2));
+        setStaging(valid);
+        setValidation({...v,total:dataRows.length,valid:valid.length,rejected:v.rejectedCount});
+        setStage("staging");
+      }catch(err){
+        console.error("Refresh schedule import failed:",err);
+        setStage("upload");setStaging([]);setValidation(null);
+        setToast(`Import failed: ${err.message||"Unknown error"}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const promote=()=>{
+    if(!staging.length)return;
+    if(validation?.errors?.length){setToast("Cannot promote: fix hard validation errors first.");return;}
+    prePromoteCasesRef.current=cases;
+    const promotedCases=staging.map(toPromotedRefreshCase);
+    setCases(prev=>[...promotedCases,...prev]);
+    setPromotedCount(promotedCases.length);
+    setStage("promoted");
+    setToast(`Refresh schedule import promoted: ${promotedCases.length.toLocaleString()} cases now live`);
+  };
+  const undoLastImport=()=>{
+    if(!prePromoteCasesRef.current){setToast("No previous refresh import to restore.");return;}
+    const prev=prePromoteCasesRef.current;
+    setCases(prev);
+    prePromoteCasesRef.current=null;
+    resetImportState("upload");
+    setToast(`Undo: restored ${prev.length.toLocaleString()} cases from previous state`);
+  };
+  const resetToDemo=()=>{
+    prePromoteCasesRef.current=null;
+    if(onResetToDemo)onResetToDemo();
+    resetImportState("upload");
+  };
+
+  return (<>
+    {stage==="upload"&&(<div style={{maxWidth:640,margin:"40px auto",textAlign:"center"}}>
+      <div style={{width:56,height:56,borderRadius:14,background:C.cyanSoft,border:`1px solid ${C.cyanBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.cyan}}>{"\u2B06"}</div>
+      <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>Refresh Scheduling Import</h2>
+      <p style={{fontSize:13,color:C.sub,margin:"0 0 20px"}}>Upload laptop refresh scheduling CSV into staging first. Promotion writes valid rows into live refresh case state and never overwrites Asset Registry master data.</p>
+      <label style={{display:"inline-block",padding:"10px 24px",borderRadius:8,background:C.accent,color:"#FFF",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+        Choose CSV File
+        <input type="file" accept=".csv" onChange={handleFile} style={{display:"none"}}/>
+      </label>
+      <div style={{marginTop:16,fontSize:11,color:C.muted}}>Expected columns: ID, Employee Name, Employee Email, Employee Phone #, Appointment Title, Status, AmWINS Technician, Old Serial Number, Serial Number, Operating Company, Start Date/Time, End Date/Time, Location, Shipping Address, Tracking Number, Modified, Notes, Created, Created By, Modified By</div>
+      <div style={{marginTop:20,padding:"10px 16px",background:C.cyanSoft,border:`1px solid ${C.cyanBorder}`,borderRadius:8,textAlign:"left"}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.cyan}}>Live refresh case import path</div>
+        <div style={{fontSize:10.5,color:C.sub,marginTop:4}}>Promoted rows become persisted `refresh` cases. Existing assets are linked by exact serial match only; unmatched serials stay in case context notes for review.</div>
+        <div style={{fontSize:10.5,color:C.sub,marginTop:6}}>Previously imported refresh schedule cases: {importedRefreshCount.toLocaleString()}</div>
+        <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+          {prePromoteCasesRef.current&&<button onClick={undoLastImport} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:11,fontWeight:600,cursor:"pointer"}}>Undo Last Refresh Import</button>}
+          <button onClick={resetToDemo} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:11,fontWeight:600,cursor:"pointer"}}>Reset to Demo Data</button>
+        </div>
+      </div>
+    </div>)}
+
+    {stage==="parsing"&&(<div style={{maxWidth:500,margin:"60px auto",textAlign:"center"}}>
+      <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Parsing {fileName}...</div>
+      <div style={{width:"100%",height:6,background:C.panel,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${parseProgress}%`,background:C.accent,borderRadius:3,transition:"width 0.3s"}}/></div>
+      <div style={{fontSize:11,color:C.muted,marginTop:8}}>{parseProgress}%</div>
+    </div>)}
+
+    {stage==="staging"&&validation&&(<>
+      <SH color={C.cyan} badge="Import Staging">Refresh Schedule Import Summary</SH>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Total Rows" value={validation.total.toLocaleString()} color={C.accent}/>
+        <Kpi label="Valid" value={validation.valid.toLocaleString()} color={C.green}/>
+        <Kpi label="Rejected" value={(validation.rejected??0).toLocaleString()} color={(validation.rejected??0)>0?C.red:C.green}/>
+        <Kpi label="Errors" value={validation.errors.length} color={validation.errors.length>0?C.red:C.green} alert={validation.errors.length>0}/>
+        <Kpi label="Warnings" value={validation.warnings.length} color={validation.warnings.length>0?C.amber:C.green}/>
+        {(validation.skippedDuplicates??0)>0&&<Kpi label="Skipped Duplicates" value={validation.skippedDuplicates} color={C.amber}/>}
+        {(validation.missingEmployee??0)>0&&<Kpi label="Missing Employee" value={validation.missingEmployee} color={C.red}/>}
+        {(validation.missingSerials??0)>0&&<Kpi label="Missing Serials" value={validation.missingSerials} color={C.red}/>}
+        {(validation.alreadyImported??0)>0&&<Kpi label="Already Imported" value={validation.alreadyImported} color={C.amber}/>}
+        <Kpi label="Linked Assets" value={validation.linkedAssets??0} color={C.cyan}/>
+        <Kpi label="Linked Replacements" value={validation.linkedReplacements??0} color={C.purple}/>
+        {(validation.invalidDates??0)>0&&<Kpi label="Invalid Dates" value={validation.invalidDates} color={C.red}/>}
+        {(validation.unknownStatuses??0)>0&&<Kpi label="Unknown Status" value={validation.unknownStatuses} color={C.red}/>}
+      </div>
+      {(validation.errors.length>0||validation.warnings.length>0)&&(<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginBottom:14,maxHeight:200,overflowY:"auto"}}>
+        <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>VALIDATION ISSUES ({validation.errors.length} errors, {validation.warnings.length} warnings)</div>
+        {validation.errors.slice(0,20).map((issue,i)=>(<div key={`re${i}`} style={{fontSize:11,color:C.red,padding:"2px 0"}}>Row {issue.row}: [{issue.field}] {issue.msg}</div>))}
+        {validation.warnings.slice(0,20).map((issue,i)=>(<div key={`rw${i}`} style={{fontSize:11,color:C.amber,padding:"2px 0"}}>Row {issue.row}: [{issue.field}] {issue.msg}</div>))}
+      </div>)}
+      {(validation.skippedDuplicates??0)>0&&<div style={{background:C.amberSoft,border:`1px solid ${C.amberBorder}`,borderRadius:8,padding:"10px 12px",marginBottom:14}}>
+        <div style={{fontSize:11.5,fontWeight:700,color:C.amber}}>Rows excluded from staging for safety: {validation.skippedDuplicates??0}</div>
+        {(validation.alreadyImported??0)>0&&<div style={{fontSize:10.5,color:C.sub,marginTop:4}}>Already-imported source IDs were skipped to avoid duplicating live refresh cases.</div>}
+      </div>}
+      <SH color={C.cyan}>Refresh Status Distribution (Staged)</SH>
+      <div style={{display:"flex",gap:4,marginBottom:14,flexWrap:"wrap"}}>
+        <button onClick={()=>{setPreviewFilter("all");setPreviewPage(0);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${previewFilter==="all"?C.accent:C.border}`,background:previewFilter==="all"?C.accentSoft:C.surface,color:previewFilter==="all"?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({staging.length.toLocaleString()})</button>
+        {Object.entries(statusCounts).map(([k,n])=>n>0?(<button key={k} onClick={()=>{setPreviewFilter(k);setPreviewPage(0);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${previewFilter===k?C.cyan:C.border}`,background:previewFilter===k?C.cyanSoft:C.surface,color:previewFilter===k?C.cyan:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{CASE_STATUS[k]?.l||k} ({n.toLocaleString()})</button>):null)}
+      </div>
+      <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 520px)"}}>
+        <table style={{width:"100%",minWidth:1180}}>
+          <thead><tr>{["Source ID","Employee","Status","Appointment","Technician","Location","Current Asset","Replacement","Linkage"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{pageData.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No staged rows match the current status filter.</td></tr>}
+          {pageData.map((row,i)=>(<tr key={`${row.sourceId||"row"}-${i}`}>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10,color:C.accent,fontWeight:600}}>{row.sourceId||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11,fontWeight:600}}>{row.userId||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel}}><span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:(CASE_STATUS[row.status]?.bg||C.graySoft),color:(CASE_STATUS[row.status]?.c||C.sub),fontWeight:700,fontFamily:MN}}>{CASE_STATUS[row.status]?.l||row._rawStatus||"Review"}</span></td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10.5,color:C.sub}}>{row.appointmentDate||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11,color:C.sub}}>{row.tech||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.locationId||row.operatingCompany||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{row.assetId||row.rawOldSerial||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{row.replacementId||row.rawNewSerial||"\u2014"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub}}>{row.assetLinked||row.replacementLinked?[row.assetLinked?"Current asset linked":"",row.replacementLinked?"Replacement linked":""].filter(Boolean).join(" · "):"Serials kept as review context"}</td>
+          </tr>))}</tbody>
+        </table>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+        <div style={{fontSize:11,color:C.muted}}>Page {previewPage+1} of {totalPages} ({previewData.length.toLocaleString()} rows)</div>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={()=>setPreviewPage(p=>Math.max(0,p-1))} disabled={previewPage===0} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:previewPage===0?C.muted:C.text,fontSize:11,cursor:previewPage===0?"default":"pointer"}}>{"\u2190"} Prev</button>
+          <button onClick={()=>setPreviewPage(p=>Math.min(totalPages-1,p+1))} disabled={previewPage>=totalPages-1} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:previewPage>=totalPages-1?C.muted:C.text,fontSize:11,cursor:previewPage>=totalPages-1?"default":"pointer"}}>Next {"\u2192"}</button>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={promote} disabled={validation.errors.length>0} style={{padding:"8px 24px",borderRadius:6,border:"none",background:validation.errors.length>0?C.muted:C.green,color:"#FFF",fontSize:13,fontWeight:600,cursor:validation.errors.length>0?"not-allowed":"pointer"}}>Promote to Live Refresh Cases ({staging.length.toLocaleString()} rows)</button>
+        <button onClick={()=>resetImportState("upload")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
+      </div>
+      {validation.errors.length>0&&<div style={{marginTop:10,padding:"10px 12px",borderRadius:8,background:C.redSoft,border:`1px solid ${C.redBorder}`,color:C.red}}>
+        <div style={{fontSize:11.5,fontWeight:700}}>Promotion blocked: {validation.errors.length} hard validation error{validation.errors.length===1?"":"s"}</div>
+        {blockedReasonSummary.length>0&&<div style={{fontSize:10.5,marginTop:4}}>Top reasons: {blockedReasonSummary.map(([label,count])=>`${label} (${count})`).join(", ")}</div>}
+      </div>}
+    </>)}
+
+    {stage==="promoted"&&(<div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
+      <div style={{width:56,height:56,borderRadius:14,background:C.greenSoft,border:`1px solid ${C.greenBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.green}}>{"\u2713"}</div>
+      <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>Import Complete</h2>
+      <p style={{fontSize:13,color:C.sub,margin:"0 0 6px"}}>{promotedCount.toLocaleString()} refresh cases promoted to live state.</p>
+      <p style={{fontSize:11,color:C.muted,margin:"0 0 20px"}}>Refresh queue, workload, command views, and persisted case state now reflect the imported scheduling data.</p>
+      <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+        <button onClick={()=>go("refresh.queue")} style={{padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Open Refresh Queue</button>
+        <button onClick={()=>resetImportState("upload")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:12,fontWeight:500,cursor:"pointer"}}>Import Another File</button>
+        {prePromoteCasesRef.current&&<button onClick={undoLastImport} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:12,fontWeight:500,cursor:"pointer"}}>Undo Import</button>}
+        <button onClick={resetToDemo} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:12,fontWeight:500,cursor:"pointer"}}>Reset to Demo Data</button>
+      </div>
+    </div>)}
+  </>);
+}
+
+function DataImportModule(props){
+  const [mode,setMode]=useState("registry");
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <button onClick={()=>setMode("registry")} style={{padding:"7px 14px",borderRadius:7,border:`1px solid ${mode==="registry"?C.accentBorder:C.border}`,background:mode==="registry"?C.accentSoft:C.surface,color:mode==="registry"?C.accent:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>AMS Registry</button>
+      <button onClick={()=>setMode("refresh")} style={{padding:"7px 14px",borderRadius:7,border:`1px solid ${mode==="refresh"?C.cyanBorder:C.border}`,background:mode==="refresh"?C.cyanSoft:C.surface,color:mode==="refresh"?C.cyan:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>Refresh Schedule</button>
+    </div>
+    {mode==="registry"?<AmsImportModule {...props}/>:<RefreshScheduleImportModule {...props}/>}
+  </>);
+}
+
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ MAIN Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 export default function ITAMPlatform(){
@@ -4478,6 +4967,7 @@ export default function ITAMPlatform(){
 
   useEffect(()=>{setAnim(false);const t=setTimeout(()=>setAnim(true),40);return ()=>clearTimeout(t);},[nav]);
   useEffect(()=>{const safeNav=resolveRoleSafeNav(currentRole,nav);if(nav!==safeNav)setNav(safeNav);},[currentRole,defaultNavId,nav]);
+  useEffect(()=>{syncCaseSeqWithCases(cases);},[cases]);
   useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.assets,assets);},[assets]);
   useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.assetActivity,assetActivity);},[assetActivity]);
   useEffect(()=>{saveStoredDataset(ITAM_STORAGE_KEYS.cases,cases);},[cases]);
@@ -4644,13 +5134,13 @@ export default function ITAMPlatform(){
           {nav==="refresh.command"&&<CommandView go={goSafe} cases={cases}/>}
           {nav==="refresh.queue"&&<QueueView go={goSafe} cases={cases} onOpenCase={openCaseFromAsset} onOpenAsset={openAssetFromCase}/>}
           {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=cases.filter(c=>c.tech===t.name&&!["closed","checked_in"].includes(c.status));return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
-          {nav==="refresh.waves"&&<WavePlannerModule setToast={setToast} go={goSafe}/>}
+          {nav==="refresh.waves"&&<WavePlannerModule setToast={setToast} go={goSafe} cases={cases}/>}
 {(nav==="cases"||nav==="cases.all"||nav==="cases.create")&&<CaseManagementModule setToast={setToast} go={goSafe} cases={cases} setCases={setCases} prefill={casePrefill} selectedCaseId={caseSelection} onConsumeSelection={clearCaseSelection} onConsumePrefill={clearCasePrefill} onCaseTransition={onCaseTransition} currentNav={nav} onOpenAsset={openAssetFromCase} assets={assets} onUpdateAsset={updateAssetByTag}/>}
           {nav==="registry"&&<AssetRegistryModule setToast={setToast} assets={assets} cases={cases} setCasePrefill={setCasePrefill} onOpenCase={openCaseFromAsset} go={goSafe} selectedAssetTag={selectedAssetTag} onClearAssetSelection={clearAssetSelection} onUpdateAsset={updateAssetByTag} assetActivity={assetActivity}/>}
           {nav==="procurement"&&<ProcurementModule setToast={setToast} go={goSafe}/>}
           {nav==="audit"&&<AuditModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase} auditEvents={auditEvents}/>}
           {(nav==="admin"||nav==="admin.config")&&<AdminModule setToast={setToast}/>}
-      {nav==="admin.import"&&<AmsImportModule setToast={setToast} assets={assets} setAssets={setAssets} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef} onResetToDemo={resetToDemoData}/>}
+      {nav==="admin.import"&&<DataImportModule setToast={setToast} assets={assets} setAssets={setAssets} cases={cases} setCases={setCases} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef} onResetToDemo={resetToDemoData}/>}
           {nav==="automation"&&<LifecycleAutomationModule setToast={setToast} go={goSafe} onAutomationEvent={onAutomationEvent} onOpenAsset={openAssetFromCase}/>}
         </main>
       </div>
