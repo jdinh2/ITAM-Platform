@@ -1,0 +1,4608 @@
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+
+// ─── Phase 1 + Phase 2 live imports ─────────────────────────────────────────
+import {
+  CLOSED_CASE_STATUSES,
+  CASE_TRANSITIONS,
+  createCaseDomain,
+} from "./features/cases/domain.js";
+
+import {
+  NULL_SHIP_LEG, NULL_SHIP_ADDRESS, NULL_SHIPPING,
+  getTracking, getShipAddress, mkAddress, mkShipLeg,
+  SHIP_STAT, APPT_STAT, RETURN_FOLLOW_UP, INTAKE_COND, INTAKE_DISP,
+  LABEL_SERVICE_TYPES, NULL_SHIPMENT, mockTrackingNumber,
+} from "./features/cases/shipping.js";
+
+import {
+  buildRefreshExecutionFields,
+  buildReturnIntakeFields,
+  isReturnIntakeCase,
+  canProcessReturnReceived,
+  canCompleteReturnIntake,
+  createCaseActions,
+} from "./features/cases/actions.js";
+
+// ============================================================================
+// ITAM PLATFORM — Inventory module with Booking Request workflow
+// Tabs: Stock Overview | Stock Table | Booking Requests
+// ============================================================================
+
+const C={bg:"var(--bg)",surface:"var(--surface-1)",surfaceAlt:"var(--surface-2)",hover:"var(--surface-2)",active:"var(--surface-2)",panel:"var(--surface-2)",border:"var(--border)",borderLight:"var(--border-subtle)",borderHeavy:"var(--border-subtle)",text:"var(--text-primary)",sub:"var(--text-secondary)",muted:"var(--muted)",light:"var(--muted)",accent:"var(--accent)",accentSoft:"rgba(79,140,255,0.14)",accentBorder:"rgba(79,140,255,0.45)",green:"var(--success)",greenSoft:"rgba(29,212,163,0.14)",greenBorder:"rgba(29,212,163,0.45)",amber:"var(--warning)",amberSoft:"rgba(244,183,64,0.14)",amberBorder:"rgba(244,183,64,0.45)",red:"var(--error)",redSoft:"rgba(255,93,108,0.14)",redBorder:"rgba(255,93,108,0.45)",purple:"#9d7dff",purpleSoft:"rgba(157,125,255,0.14)",purpleBorder:"rgba(157,125,255,0.45)",cyan:"#35c9ff",cyanSoft:"rgba(53,201,255,0.14)",cyanBorder:"rgba(53,201,255,0.45)",orange:"#ff9f43",orangeSoft:"rgba(255,159,67,0.14)",orangeBorder:"rgba(255,159,67,0.45)",gray:"#8ea2c9",graySoft:"rgba(142,162,201,0.16)",grayBorder:"rgba(142,162,201,0.35)",shadow:"var(--shadow-1)",shadowMd:"var(--card-shadow)",innerHighlight:"var(--card-highlight)",chartGrid:"var(--chart-grid)",chartAxis:"var(--chart-axis)"};
+const MN="'Geist Mono','SF Mono',monospace";
+const SN="'Geist',-apple-system,BlinkMacSystemFont,sans-serif";
+const NAV_ROLES=["Executive","Lead","Technician","Admin"];
+const ROLE_DEFAULT_NAV={Executive:"executive",Lead:"refresh.command",Technician:"refresh.queue",Admin:"refresh.command"};
+const IS_DEV=(typeof window!=="undefined"&&/^(localhost|127\.0\.0\.1)$/i.test(window.location?.hostname||""));
+const { CASE_TYPES, CASE_STATUS, isAllowedTransition, transitionValidation } = createCaseDomain(C);
+
+// ─── NAV_CONFIG ────────────────────────────────────────────────────────────────
+// Domain groups: Home | Assets | Refresh & Returns | Cases |
+//                Operations | Administration
+//
+// Route ID compatibility notes (all route IDs preserved):
+//   "executive"         — unchanged, Home group
+//   "home.queue"        — unchanged, Home group
+//   "assets"            — NEW top-level shell for Assets domain
+//   "registry"          — unchanged route id, now child of "assets" (was child of "cases")
+//   "inventory"         — unchanged route id, now child of "assets" (was top-level)
+//   "inventory.stock"   — unchanged route id, now grandchild via "inventory" under "assets"
+//   "inventory.bookings"— unchanged route id
+//   "procurement"       — unchanged route id, now child of "assets" directly
+//   "refresh.*"         — all unchanged
+//   "returns"           — unchanged, child of "refresh"
+//   "returns.lease"     — unchanged, child of "refresh"
+//   "cases"             — unchanged route id, label changed to "Cases", group changed to "Cases"
+//   "cases.all"         — unchanged
+//   "cases.create"      — unchanged
+//   "onboarding"        — unchanged, child of "cases"
+//   "offboarding"       — unchanged, child of "cases"
+//   "breakfix"          — unchanged, child of "cases"
+//   "ops.*"             — unchanged
+//   "alerts"            — unchanged, child of "ops"
+//   "audit"             — unchanged, child of "ops"
+//   "admin.*"           — unchanged
+//   "automation"        — unchanged, child of "admin"
+// ──────────────────────────────────────────────────────────────────────────────
+const NAV_CONFIG=[
+  // ── HOME ──────────────────────────────────────────────────────────────────
+  {id:"executive",         group:"Home",            label:"Executive Overview",     icon:"\u25A6",parentId:null,       rolesAllowed:["Executive","Lead","Admin"]},
+  {id:"home.queue",        group:"Home",            label:"My Queue",               icon:"\u25A4",parentId:null,       rolesAllowed:["Lead","Technician"]},
+
+  // ── ASSETS ────────────────────────────────────────────────────────────────
+  {id:"assets",            group:"Assets",          label:"Assets",                 icon:"\u229E",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"registry",          group:"Assets",          label:"Asset Registry",         icon:null,    parentId:"assets",   core:true, rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"inventory.stock",   group:"Assets",          label:"Inventory",              icon:null,    parentId:"assets",   rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"inventory.bookings",group:"Assets",          label:"Booking Requests",       icon:null,    parentId:"assets",   rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"procurement",       group:"Assets",          label:"Procurement",            icon:null,    parentId:"assets",   rolesAllowed:["Lead","Admin"]},
+
+  // ── REFRESH & RETURNS ──────────────────────────────────────────────────────
+  {id:"refresh",           group:"Refresh & Returns",label:"Refresh & Returns",    icon:"\u21BB",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"refresh.command",   group:"Refresh & Returns",label:"Command Center",       icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"refresh.queue",     group:"Refresh & Returns",label:"Refresh Queue",        icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"refresh.techs",     group:"Refresh & Returns",label:"Appointments",         icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"refresh.waves",     group:"Refresh & Returns",label:"Wave Planner",         icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Lead","Admin"]},
+  {id:"returns",           group:"Refresh & Returns",label:"Return Queue",         icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"returns.lease",     group:"Refresh & Returns",label:"Lease Vendor Returns", icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Admin"]},
+
+  // ── CASES ─────────────────────────────────────────────────────────────────
+  {id:"cases",             group:"Cases",           label:"Cases",                  icon:"\u2637",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"cases.all",         group:"Cases",           label:"All Cases",              icon:null,    parentId:"cases",    rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"cases.create",      group:"Cases",           label:"Create Case",            icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"onboarding",        group:"Cases",           label:"Onboarding",             icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"offboarding",       group:"Cases",           label:"Offboarding",            icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
+  {id:"breakfix",          group:"Cases",           label:"Break-Fix",              icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
+
+  // ── OPERATIONS ────────────────────────────────────────────────────────────
+  {id:"ops",               group:"Operations",      label:"Operations",             icon:"\u25A4",parentId:null,       rolesAllowed:["Executive","Lead","Admin"]},
+  {id:"ops.dashboard",     group:"Operations",      label:"Workload Planner",       icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Admin"]},
+  {id:"ops.workload",      group:"Operations",      label:"Team Workload",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Admin"]},
+  {id:"alerts",            group:"Operations",      label:"Alerts & Exceptions",    icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Technician","Admin"]},
+  {id:"audit",             group:"Operations",      label:"Audit History",          icon:null,    parentId:"ops",      rolesAllowed:["Lead","Admin"]},
+
+  // ── ADMINISTRATION ────────────────────────────────────────────────────────
+  {id:"admin",             group:"Administration",  label:"Administration",         icon:"\u2699",parentId:null,       rolesAllowed:["Admin"]},
+  {id:"admin.config",      group:"Administration",  label:"Admin Config",           icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
+  {id:"admin.import",      group:"Administration",  label:"AMS Import",             icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
+  {id:"automation",        group:"Administration",  label:"Lifecycle Engine",       icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
+];
+const buildNavTree=(items)=>{
+  const roots=items.filter(item=>item.parentId==null);
+  return roots.map(item=>{
+    const children=items.filter(child=>child.parentId===item.id).map(child=>({
+      id:child.id,
+      label:child.label,
+      icon:child.icon,
+      group:child.group,
+      rolesAllowed:child.rolesAllowed,
+      parentId:child.parentId,
+    }));
+    return {
+      id:item.id,
+      label:item.label,
+      icon:item.icon,
+      core:item.core,
+      group:item.group,
+      rolesAllowed:item.rolesAllowed,
+      children:children.length>0?children:undefined,
+    };
+  });
+};
+const navLookupAll=Object.fromEntries(NAV_CONFIG.map(item=>[item.id,item]));
+const navTitlePrefix=(id,label)=>{
+  if(id==="assets")   return "Assets";
+  if(id==="refresh")  return "Refresh & Returns";
+  if(id==="cases")    return "Cases";
+  if(id==="ops")      return "Operations";
+  if(id==="admin")    return "Administration";
+  return label;
+};
+const getVisibleNavConfigForRole=(role)=>NAV_CONFIG.filter(item=>item.rolesAllowed.includes(role));
+const getVisibleNavTreeForRole=(role)=>buildNavTree(getVisibleNavConfigForRole(role));
+const getAllowedNavIdsForRole=(role)=>new Set(getVisibleNavTreeForRole(role).flatMap(item=>[item.id,...(item.children||[]).map(child=>child.id)]));
+const getDefaultNavIdForRole=(role)=>ROLE_DEFAULT_NAV[role]||"refresh.command";
+const resolveRoleSafeNav=(role,navId)=>{
+  const allowedNavIds=getAllowedNavIdsForRole(role);
+  const defaultNavId=getDefaultNavIdForRole(role);
+  return allowedNavIds.has(navId)?navId:defaultNavId;
+};
+function validateNavConfig(config){
+  const errors=[];
+  const byId=new Map();
+  const childrenByParent=new Map();
+  const cycleIds=new Set();
+ 
+  config.forEach(item=>{
+    if(byId.has(item.id))errors.push(`Duplicate id in NAV_CONFIG: ${item.id}`);
+    else byId.set(item.id,item);
+
+    const parentKey=item.parentId||"__root__";
+    const siblings=childrenByParent.get(parentKey)||[];
+    siblings.push(item);
+    childrenByParent.set(parentKey,siblings);
+
+    if(!Array.isArray(item.rolesAllowed)||item.rolesAllowed.length===0)errors.push(`rolesAllowed missing for nav item: ${item.id}`);
+    else{
+      const invalidRoles=item.rolesAllowed.filter(role=>!NAV_ROLES.includes(role));
+      if(invalidRoles.length)errors.push(`Invalid rolesAllowed for ${item.id}: ${invalidRoles.join(", ")}`);
+    }
+  });
+
+  config.forEach(item=>{
+    if(item.parentId!=null&&!byId.has(item.parentId))errors.push(`Missing parentId reference for ${item.id}: ${item.parentId}`);
+  });
+
+  childrenByParent.forEach((siblings,parentKey)=>{
+    const seenLabels=new Map();
+    siblings.forEach(item=>{
+      const label=(item.label||"").trim();
+      if(!label){
+        errors.push(`Empty label for nav item: ${item.id}`);
+        return;
+      }
+      const norm=label.toLowerCase();
+      if(seenLabels.has(norm))errors.push(`Duplicate label under parent ${parentKey==="__root__"?"<root>":parentKey}: ${label}`);
+      else seenLabels.set(norm,item.id);
+    });
+  });
+
+  const visit=(id,stack=[])=>{
+    const cycleStart=stack.indexOf(id);
+    if(cycleStart!==-1){
+      const cycleSegment=[...stack.slice(cycleStart),id];
+      cycleSegment.slice(0,-1).forEach(nodeId=>cycleIds.add(nodeId));
+      errors.push(`CYCLE: ${cycleSegment.join(" -> ")}`);
+      return;
+    }
+
+    const item=byId.get(id);
+    if(!item||item.parentId==null)return;
+    visit(item.parentId,[...stack,id]);
+  };
+
+  config.forEach(item=>visit(item.id,[]));
+
+  const getDepth=(item)=>{
+    let depth=0;
+    let current=item;
+    const seen=new Set();
+    while(current?.parentId!=null){
+      if(seen.has(current.id)||cycleIds.has(current.id)||cycleIds.has(current.parentId))return null;
+      seen.add(current.id);
+      depth++;
+      current=byId.get(current.parentId);
+    }
+    return depth;
+  };
+
+  config.forEach(item=>{
+    const depth=getDepth(item);
+    if(depth!=null&&depth>1)errors.push(`Nav depth exceeds 2 levels for item: ${item.id}`);
+  });
+
+  return [...new Set(errors)];
+}
+function navConfigUnitTests(){
+  if(!IS_DEV)return;
+
+  const validConfig=[
+    {id:"root",label:"Root",icon:"R",parentId:null,rolesAllowed:["Admin"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
+  ];
+  const cycleConfig=[
+    {id:"a",label:"A",icon:null,parentId:"c",rolesAllowed:["Admin"]},
+    {id:"b",label:"B",icon:null,parentId:"a",rolesAllowed:["Admin"]},
+    {id:"c",label:"C",icon:null,parentId:"b",rolesAllowed:["Admin"]},
+  ];
+  const deepConfig=[
+    {id:"root",label:"Root",icon:null,parentId:null,rolesAllowed:["Admin"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
+    {id:"grandchild",label:"Grandchild",icon:null,parentId:"child",rolesAllowed:["Admin"]},
+  ];
+  const multiErrorConfig=[
+    {id:"dup",label:"One",icon:null,parentId:null,rolesAllowed:["Admin"]},
+    {id:"dup",label:"Two",icon:null,parentId:"missing",rolesAllowed:["BadRole"]},
+  ];
+
+  const cases=[
+    {name:"validConfig",config:validConfig,expect:(errs)=>errs.length===0},
+    {name:"cycleConfig",config:cycleConfig,expect:(errs)=>errs.some(e=>e.startsWith("CYCLE:"))},
+    {name:"deepConfig",config:deepConfig,expect:(errs)=>errs.some(e=>e.includes("Nav depth exceeds 2 levels"))},
+    {name:"multiErrorConfig",config:multiErrorConfig,expect:(errs)=>errs.some(e=>e.includes("Duplicate id"))&&errs.some(e=>e.includes("Missing parentId reference"))&&errs.some(e=>e.includes("Invalid rolesAllowed"))},
+  ];
+
+  cases.forEach(({name,config,expect})=>{
+    const errs=validateNavConfig(config);
+    const passed=expect(errs);
+    console.log(`[navConfigUnitTests] ${name}: ${passed?"PASS":"FAIL"}${passed?"":` -> ${errs.join(" | ")}`}`);
+  });
+}
+function runNavSelfTest(){
+  const failures=[];
+  NAV_ROLES.forEach(role=>{
+    const allowedNavIds=getAllowedNavIdsForRole(role);
+    const defaultNavId=getDefaultNavIdForRole(role);
+    if(!allowedNavIds.has(defaultNavId))failures.push(`[${role}] defaultNavId is not allowed: ${defaultNavId}`);
+    const disallowedNavId=NAV_CONFIG.find(item=>!allowedNavIds.has(item.id))?.id;
+    if(disallowedNavId){
+      const redirectedNavId=resolveRoleSafeNav(role,disallowedNavId);
+      if(redirectedNavId!==defaultNavId)failures.push(`[${role}] disallowed nav did not redirect to default: ${disallowedNavId} -> ${redirectedNavId}`);
+    }
+  });
+  return failures;
+}
+if (IS_DEV) {
+  const navConfigErrors = validateNavConfig(NAV_CONFIG);
+  const navSelfTestFailures = runNavSelfTest();
+
+  if (navConfigErrors.length || navSelfTestFailures.length) {
+    console.group("NAV_CONFIG CONTRACT FAILURE");
+
+    if (navConfigErrors.length) {
+      console.error("Validation errors:");
+      navConfigErrors.forEach(err => console.error(`- ${err}`));
+    }
+
+    if (navSelfTestFailures.length) {
+      console.error("Self-test failures:");
+      navSelfTestFailures.forEach(err => console.error(`- ${err}`));
+    }
+
+    console.groupEnd();
+
+    throw new Error("NAV_CONFIG contract violated. See console for details.");
+  }
+
+  navConfigUnitTests();
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ INVENTORY DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const INV=[
+  {s:"C920s",n:"Logitech Pro HD Webcam",c:"Logitech",t:"Camera",q:8,r:7,b:"C920s",l:"Charlotte, NC (PTC)"},
+  {s:"7510209",n:"Jabra Speak2",c:"Jabra",t:"Speakerphone",q:3,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"A01059",n:"CODi Centro M3",c:"CODi",t:"Dock",q:12,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"H570e",n:"Logitech USB Headset Stereo",c:"Logitech",t:"Headphones",q:1,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"W8Z00001",n:"Surface 65W Charger",c:"Microsoft",t:"Charger",q:31,r:25,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"B5200",n:"Poly Voyager 5200 UC",c:"Poly",t:"Headphones",q:1,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"P569006",n:"HDMI to HDMI - 6'",c:"Tripp Lite",t:"Cable",q:52,r:25,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"P580010",n:"DP to DP - 10'",c:"Tripp Lite",t:"Cable",q:197,r:25,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"P582006",n:"DP to HDMI - 6'",c:"Tripp Lite",t:"Cable",q:148,r:25,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"N201006BK",n:"Cat6 - 6'",c:"Tripp Lite",t:"Cable",q:27,r:12,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"U360004SLIM",n:"Tripp Lite USB 3.0 Hub",c:"Tripp Lite",t:"Dock",q:19,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"15410",n:"BusyLight UC Omega",c:"Kuando",t:"Light",q:5,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"15306",n:"BusyLight UC Alpha",c:"Kuando",t:"Light",q:4,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"VG2448A",n:"ViewSonic 24\" Monitor w/ Stand",c:"ViewSonic",t:"Monitor",q:9,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"KM555",n:"Dell Bluetooth KB/Mouse",c:"Dell",t:"Keyboard/Mouse",q:1,r:17,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"EP237087",n:"Surface Laptop 5G",c:"Microsoft",t:"Laptop",q:5,r:5,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"SMTL2200RM2UCNC",n:"APC Smart-UPS 2200",c:"APC",t:"Server Room",q:1,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"SCL500RM1UNC",n:"APC Smart-UPS 500",c:"APC",t:"Server Room",q:2,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"AP9562",n:"Rack-Mount PDU",c:"APC",t:"Server Room",q:32,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"WD25",n:"Dell Pro Dock",c:"Dell",t:"Dock",q:15,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"SD25",n:"Dell Pro Smart Dock",c:"Dell",t:"Dock",q:17,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"920004536",n:"Logitech MK270 KB/Mouse",c:"Logitech",t:"Keyboard/Mouse",q:4,r:5,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"P2425H",n:"Dell 24\" Monitor - No Stand",c:"Dell",t:"Monitor",q:5,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"MousePad",n:"AmWins Mouse Pad",c:"Amwins",t:"Mouse Pad",q:196,r:150,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"VTG9M",n:"Dell Desktop",c:"Dell",t:"Desktop",q:1,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"VG1655",n:"ViewSonic Portable Monitor",c:"ViewSonic",t:"Monitor",q:2,r:5,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"21HQ000CUS",n:"Lenovo ThinkPad Yoga Gen 8",c:"Lenovo",t:"Laptop",q:2,r:2,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"Z1FF000EN",n:"MacBook",c:"Apple",t:"Laptop",q:5,r:3,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"SP3022",n:"Dell AI Speakerphone",c:"Dell",t:"Speakerphone",q:7,r:11,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"SZ2S011",n:"Vaydeer Vertical Laptop Dock",c:"Vaydeer",t:"Dock",q:37,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"9638827427",n:"Surface 13\" 64GB",c:"Microsoft",t:"Laptop",q:0,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"9638819168",n:"Surface Studio",c:"Microsoft",t:"Laptop",q:2,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"WH5024",n:"Dell Wired ANC Headset",c:"Dell",t:"Headphones",q:10,r:12,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"WL3024",n:"Dell Wireless Headset",c:"Dell",t:"Headphones",q:9,r:4,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"9638827670",n:"Surface 15\" 64GB",c:"Microsoft",t:"Laptop",q:2,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"563",n:"Anker USB-C Dock",c:"Anker",t:"Dock",q:1,r:3,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"OJ8760011A",n:"APC Feet",c:"APC",t:"Server Room",q:6,r:5,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"AP9641",n:"APC NMC3",c:"APC",t:"Server Room",q:13,r:5,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"P2425HE",n:"Dell 24\" Monitor w/ Dock",c:"Dell",t:"Monitor",q:11,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"Refurb",n:"Refurbished Laptop",c:"Microsoft",t:"Laptop",q:99777,r:1,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"EP233223",n:"Surface Laptop",c:"Microsoft",t:"Laptop",q:0,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"DellPremiumPA14250",n:"Dell Pro 32GB",c:"Dell",t:"Laptop",q:203,r:100,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"MA14250",n:"Dell Pro Max 64GB",c:"Dell",t:"Laptop",q:47,r:10,b:"",l:"Charlotte, NC (PTC)"},
+  {s:"WB3023",n:"Dell 2K Camera",c:"Dell",t:"Camera",q:15,r:8,b:"",l:"Charlotte, NC (PTC)"},
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BOOKING REQUEST SEED DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const BK_STAT={draft:{l:"Draft",c:C.gray,bg:C.graySoft,bd:C.grayBorder},submitted:{l:"Submitted",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},pending_approval:{l:"Pending Approval",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},approved:{l:"Approved",c:C.green,bg:C.greenSoft,bd:C.greenBorder},rejected:{l:"Rejected",c:C.red,bg:C.redSoft,bd:C.redBorder},fulfilled:{l:"Fulfilled",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},cancelled:{l:"Cancelled",c:C.gray,bg:C.graySoft,bd:C.grayBorder}};
+const SEED_BK=[
+  {id:"BK-2026-0001",user:"Cara Warren",loc:"Atlanta (ATL)",type:"Refresh",ref:"RC-2026-0020",by:"Micah Harris",date:"2026-03-04",needed:"2026-03-18",status:"approved",actionBy:"Anthony Cousin",actionDate:"2026-03-05",notes:"Refresh for Cara Warren. Scheduled Mar 18.",items:[{sku:"DellPremiumPA14250",name:"Dell Pro 32GB",qty:1},{sku:"WD25",name:"Dell Pro Dock",qty:1},{sku:"P2425HE",name:"Dell 24\" Monitor w/ Dock",qty:1}],history:[{date:"2026-03-04",event:"Request created",by:"Micah Harris"},{date:"2026-03-04",event:"Submitted for approval",by:"Micah Harris"},{date:"2026-03-05",event:"Approved",by:"Anthony Cousin"}]},
+  {id:"BK-2026-0002",user:"Tyler Newton",loc:"Atlanta (ATL)",type:"Refresh",ref:"RC-2026-0025",by:"Micah Harris",date:"2026-03-06",needed:"2026-05-02",status:"pending_approval",actionBy:null,actionDate:null,notes:"Pre-staging for ATL wave May visit.",items:[{sku:"DellPremiumPA14250",name:"Dell Pro 32GB",qty:1},{sku:"SD25",name:"Dell Pro Smart Dock",qty:1}],history:[{date:"2026-03-06",event:"Request created",by:"Micah Harris"},{date:"2026-03-06",event:"Submitted for approval",by:"Micah Harris"}]},
+  {id:"BK-2026-0003",user:"James Wright",loc:"Remote \u2014 Atlanta",type:"Incident",ref:"INC0042871",by:"Help Desk",date:"2026-03-05",needed:"2026-03-10",status:"fulfilled",actionBy:"Warehouse Tech",actionDate:"2026-03-06",notes:"Replacement dock for damaged unit. Shipped via FedEx.",items:[{sku:"WD25",name:"Dell Pro Dock",qty:1}],history:[{date:"2026-03-05",event:"Request created",by:"Help Desk"},{date:"2026-03-05",event:"Submitted",by:"Help Desk"},{date:"2026-03-05",event:"Approved (auto \u2014 incident)",by:"System"},{date:"2026-03-06",event:"Fulfilled \u2014 shipped",by:"Warehouse Tech"}]},
+  {id:"BK-2026-0004",user:"Maria Santos",loc:"Charlotte (PTC)",type:"Refresh",ref:"RC-2026-0001",by:"Anthony Cousin",date:"2026-03-06",needed:"2026-04-15",status:"submitted",actionBy:null,actionDate:null,notes:"Q3 refresh staging. Pending device selection.",items:[{sku:"EP237087",name:"Surface Laptop 5G",qty:1},{sku:"A01059",name:"CODi Centro M3",qty:1},{sku:"VG2448A",name:"ViewSonic 24\" Monitor w/ Stand",qty:1}],history:[{date:"2026-03-06",event:"Request created",by:"Anthony Cousin"},{date:"2026-03-06",event:"Submitted for approval",by:"Anthony Cousin"}]},
+  {id:"BK-2026-0005",user:"Rachel Torres",loc:"Remote \u2014 Denver",type:"Incident",ref:"INC0042903",by:"Help Desk",date:"2026-03-06",needed:"2026-03-08",status:"rejected",actionBy:"Micah Harris",actionDate:"2026-03-06",notes:"Requested MacBook but user profile requires Windows.",items:[{sku:"Z1FF000EN",name:"MacBook",qty:1}],history:[{date:"2026-03-06",event:"Request created",by:"Help Desk"},{date:"2026-03-06",event:"Submitted",by:"Help Desk"},{date:"2026-03-06",event:"Rejected \u2014 wrong device profile",by:"Micah Harris"}]},
+  {id:"BK-2026-0006",user:"David Park",loc:"Chicago (CHI)",type:"Refresh",ref:"RC-2026-0030",by:"Micah Harris",date:"2026-03-02",needed:"2026-03-12",status:"fulfilled",actionBy:"Warehouse Tech",actionDate:"2026-03-10",notes:"Refresh bundle shipped to Chicago.",items:[{sku:"MA14250",name:"Dell Pro Max 64GB",qty:1},{sku:"SD25",name:"Dell Pro Smart Dock",qty:1},{sku:"P2425H",name:"Dell 24\" Monitor - No Stand",qty:2},{sku:"WH5024",name:"Dell Wired ANC Headset",qty:1}],history:[{date:"2026-03-02",event:"Request created",by:"Micah Harris"},{date:"2026-03-02",event:"Submitted",by:"Micah Harris"},{date:"2026-03-03",event:"Approved",by:"Anthony Cousin"},{date:"2026-03-10",event:"Fulfilled \u2014 shipped to CHI",by:"Warehouse Tech"}]},
+  {id:"BK-2026-0007",user:"New Hire (TBD)",loc:"Charlotte (PTC)",type:"Incident",ref:"INC0042950",by:"HR Onboarding",date:"2026-03-06",needed:"2026-03-20",status:"draft",actionBy:null,actionDate:null,notes:"Pending new hire start date confirmation.",items:[{sku:"DellPremiumPA14250",name:"Dell Pro 32GB",qty:1},{sku:"WD25",name:"Dell Pro Dock",qty:1},{sku:"P2425HE",name:"Dell 24\" Monitor w/ Dock",qty:2},{sku:"WL3024",name:"Dell Wireless Headset",qty:1},{sku:"WB3023",name:"Dell 2K Camera",qty:1}],history:[{date:"2026-03-06",event:"Draft created",by:"HR Onboarding"}]},
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ REFRESH DATA (compact) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── SHARED SHIPPING SCHEMA ───────────────────────────────────────────────────
+// Normalized shipping object used across onboarding, offboarding, returns,
+// refresh cases, and break-fix workflows. Designed to map 1:1 to the FedEx
+// Ship API when real integration is added.
+//
+// DIRECTION BY WORKFLOW TYPE:
+//   onboarding  — outbound only  (device shipped TO the new employee)
+//   offboarding — return only    (device shipped FROM the employee back to warehouse)
+//   refresh     — both           (outbound: new device TO user; return: old device FROM user)
+//   returns     — return only    (device shipped back to warehouse for any reason)
+//   break-fix   — both possible  (outbound: loaner/replacement TO user; return: broken unit FROM user)
+//
+// FUTURE FEDEX INTEGRATION:
+//   outbound.{*}  → POST /v1/ship/shipments   (ship-to: recipient address)
+//   return.{*}    → POST /v1/ship/shipments   (ship-to: warehouse, returnShipmentType: PRINT_RETURN_LABEL)
+//   labelId       → FedEx masterTrackingNumber or labelResponse.shipmentId
+//   labelStatus   → polled via GET /v1/track/trackingnumbers
+//
+// BACKWARD COMPAT: existing records keep flat `track` and `shipAddr` fields.
+// Use getTracking(rec) and getShipAddress(rec) for safe reads across old/new records.
+// ─────────────────────────────────────────────────────────────────────────────
+// NULL_SHIP_LEG through mkShipLeg — imported from ./features/cases/shipping.js
+
+const RF_S={pending_contact:{s:"Pending",c:C.gray,bg:C.graySoft,bd:C.grayBorder},follow_up:{s:"Follow-Up",c:C.red,bg:C.redSoft,bd:C.redBorder},scheduled:{s:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},provisioning:{s:"Provisioning",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},deploy_complete:{s:"Deployed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},return_pending:{s:"Ret. Pending",c:C.red,bg:C.redSoft,bd:C.redBorder},checked_in:{s:"Checked In",c:C.green,bg:C.greenSoft,bd:C.greenBorder},closed:{s:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder}};
+const CASES=[
+  {id:"RC-2026-0001",user:"Maria Santos",office:"Charlotte (PTC)",at:"SL-3847",dte:330,urg:"MEDIUM",status:"pending_contact",tech:null,sd:null,wave:"PTC Q3 2026"},
+  {id:"RC-2026-0015",user:"Jill Bowyer",office:"Birmingham (BHM)",at:"TP-2651",dte:86,urg:"HIGH",status:"follow_up",tech:null,sd:null,wave:"BHM Q4 2026"},
+  {id:"RC-2026-0020",user:"Cara Warren",office:"Atlanta (ATL)",at:"TP-2744",dte:86,urg:"HIGH",status:"scheduled",tech:"Jonathan Gamble",sd:"2026-03-18",wave:"ATL Q3 2026"},
+  {id:"RC-2026-0030",user:"Angus Gambill",office:"Charlotte (PTC)",at:"TY-2580",dte:86,urg:"HIGH",status:"provisioning",tech:"Anthony Cousin",sd:"2026-03-20",wave:"PTC Q2 2026"},
+  {id:"RC-2026-0040",user:"Jordan Rosengart",office:"Atlanta (ATL)",at:"TP-2745",dte:86,urg:"HIGH",status:"deploy_complete",tech:"Jonathan Gamble",sd:"2026-03-10",wave:"ATL Q3 2026"},
+  {id:"RC-2026-0045",user:"Sam Vives",office:"Charlotte (PTC)",at:"TP-2801",dte:86,urg:"HIGH",status:"return_pending",tech:"Anthony Cousin",sd:"2026-03-03",wave:"PTC Q2 2026"},
+  {id:"RC-2026-0060",user:"Angeley Vang",office:"Charlotte (CC3)",at:"TP-2802",dte:86,urg:"HIGH",status:"checked_in",tech:"Jakob Null",sd:"2026-02-25",wave:"CC3 Q2 2026"},
+  {id:"RC-2026-0070",user:"Nicholas Prince",office:"Charlotte (CC3)",at:"TP-2805",dte:86,urg:"HIGH",status:"closed",tech:"Jakob Null",sd:"2026-02-18",wave:"CC3 Q2 2026"},
+];
+// ─── TECHNICIAN ROSTER ────────────────────────────────────────────────────
+//
+// FIELD REFERENCE
+// ── Identity (display + join key) ────────────────────────────────────────
+//   id     — snake_case unique key; used as React key only
+//   name   — full name; PRIMARY JOIN KEY matched against case.tech and
+//            auditEvent.by throughout all modules — keep exact spelling
+//   role   — display label shown in Command Center, Technician Dashboard,
+//            and Admin → Technicians table
+//   home   — primary office; display only
+//   travel — true if tech makes remote site visits; controls trip badge
+//            visibility in the Technician Dashboard (refresh.techs)
+//   trip   — trip label string shown as a badge when travel===true and
+//            trip is non-null (e.g. "ATL May 1-10"); null when not traveling
+//
+// ── Planning (feed workload calculations) ────────────────────────────────
+//   cap  — tasks per day this tech can handle
+//          Used in: OperationsWorkloadPlanner → capRows → cap * 5 = weekly
+//          capacity target, compared against scheduled task count to produce
+//          utilization % and Overloaded / Normal / Underutilized status
+//          Typical values: 8 for full-time field tech, 6 for lead/coordinator
+//
+//   avg  — average minutes to complete one refresh task (end-to-end)
+//          Used in: ExecutiveCommandCenter → avgRefreshCycleDays KPI
+//            formula: (mean avg across team) × 0.28 = estimated days
+//          Also shown in: techPerf table (Exec view), Technician Dashboard
+//          Adjust this to match observed actuals once real data exists.
+//          Typical starting range: 35–50 min for remote/shipped refreshes,
+//          25–35 min for walk-in / onsite sessions.
+//
+// HOW TO TUNE
+//   - cap:  lower for leads or coordinators who split time on non-field work
+//   - avg:  update once you have real refresh completion time data from cases
+//   - travel / trip: set trip to a string when a tech is on a scheduled visit
+//
+// ─────────────────────────────────────────────────────────────────────────
+const TECHS=[
+  // ── Identity ──────────────────────────────── ── Planning ──
+  // id                  name                role           home               travel trip    cap  avg
+  {id:"jon_dinh",        name:"Jon Dinh",        role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
+  {id:"anthony_cousin",  name:"Anthony Cousin",  role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
+  {id:"jonathan_gamble", name:"Jonathan Gamble", role:"Technician", home:"Charlotte (PTC)",travel:true, trip:null, cap:8, avg:42},
+  {id:"michael_girardi", name:"Michael Girardi", role:"Technician", home:"Charlotte (PTC)",travel:true, trip:null, cap:8, avg:40},
+  {id:"isaiah_gourdine", name:"Isaiah Gourdine", role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
+  {id:"micah_harris",    name:"Micah Harris",    role:"Lead Tech",  home:"Charlotte (PTC)",travel:true, trip:null, cap:6, avg:38},
+  {id:"jakob_null",      name:"Jakob Null",      role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
+  {id:"zion_crawford",   name:"Zion Crawford",   role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
+  //
+  // To add a tech: copy a row, assign a new id, set the correct name,
+  // and tune cap/avg. The name must exactly match the value used in
+  // case records and audit events for workload filtering to work.
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ONBOARDING DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const OB_STAT={pending_scheduling:{l:"Pending Scheduling",c:C.gray,bg:C.graySoft,bd:C.grayBorder},scheduled:{l:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},in_progress:{l:"In Progress",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},completed:{l:"Completed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},follow_up:{l:"Follow-Up",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},canceled:{l:"Canceled",c:C.gray,bg:C.graySoft,bd:C.grayBorder},no_show:{l:"No Show",c:C.red,bg:C.redSoft,bd:C.redBorder}};
+const ONBOARDING=[
+  {id:"OB-0001",user:"Dylan Hodgson",email:"dhodgson@amwins.com",phone:"",sn:"BK37V9725223P7",oldSn:"",opco:"San Francisco, CA",loc:"San Francisco, CA",status:"completed",appt:"Onsite",tech:"Micah Harris",date:"2026-02-11",track:"888619420670",notes:"MGAWBNC-SFO-20901",process_type:"onboarding",shipAddr:"",
+    shipping:{address:mkAddress("","San Francisco","CA","","Dylan Hodgson",false),outbound:mkShipLeg("888619420670"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0002",user:"Katie Krause",email:"kkrause@amwins.com",phone:"",sn:"0F3M36F25073P7",oldSn:"",opco:"Kansas City, MO",loc:"Kansas City, MO",status:"completed",appt:"Virtual",tech:"Anthony Cousin",date:"2026-02-23",track:"888652503040",notes:"MGAWBNC-KSC-20902",process_type:"onboarding",shipAddr:"",
+    shipping:{address:mkAddress("","Kansas City","MO","","Katie Krause",false),outbound:mkShipLeg("888652503040"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0003",user:"RJ Samellas",email:"rsamellas@amwins.com",phone:"",sn:"BK3387R25243P7",oldSn:"",opco:"Mount Pleasant, SC",loc:"Mount Pleasant, SC",status:"completed",appt:"Virtual",tech:"Micah Harris",date:"2026-02-23",track:"888652232255",notes:"MGAWBNC-MTP-20903",process_type:"onboarding",shipAddr:"Mount Pleasant, SC",
+    shipping:{address:mkAddress("","Mount Pleasant","SC","","RJ Samellas",false),outbound:mkShipLeg("888652232255"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0004",user:"Blake Battisto",email:"bbattisto@amwins.com",phone:"",sn:"0F38RJH25113P7",oldSn:"",opco:"Scottsdale, AZ",loc:"Scottsdale, AZ",status:"completed",appt:"Virtual",tech:"Isaiah Gourdine",date:"2026-02-23",track:"888652411723",notes:"MGAWBNC-SCO-20904",process_type:"onboarding",shipAddr:"Scottsdale, AZ",
+    shipping:{address:mkAddress("","Scottsdale","AZ","","Blake Battisto",false),outbound:mkShipLeg("888652411723"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0005",user:"Brandon Mitchell",email:"bmitchell@amwins.com",phone:"",sn:"0F3G1BC25073P7",oldSn:"",opco:"Charlotte (PTC)",loc:"Charlotte (PTC)",status:"completed",appt:"Onsite",tech:"Anthony Cousin",date:"2026-02-24",track:"",notes:"Walk-in PTC onboarding",process_type:"onboarding",shipAddr:"",
+    shipping:{...NULL_SHIPPING}},
+  {id:"OB-0006",user:"Taylor Whitfield",email:"twhitfield@amwins.com",phone:"704-555-0182",sn:"BK37VDH25223P7",oldSn:"",opco:"Charlotte (PTC)",loc:"Charlotte (PTC)",status:"scheduled",appt:"Onsite",tech:"Anthony Cousin",date:"2026-03-10",track:"",notes:"New hire start Mar 10. Desk kit reserved.",process_type:"onboarding",shipAddr:"",
+    shipping:{...NULL_SHIPPING}},
+  {id:"OB-0007",user:"Priya Nagarajan",email:"pnagarajan@amwins.com",phone:"",sn:"0F3PHDR24193GT",oldSn:"",opco:"Remote — Dallas",loc:"Dallas, TX",status:"scheduled",appt:"Virtual",tech:"Micah Harris",date:"2026-03-12",track:"888910445521",notes:"Remote onboarding. Shipped to home address.",process_type:"onboarding",shipAddr:"2411 Elm Creek Ct, Dallas TX 75201",
+    shipping:{address:mkAddress("2411 Elm Creek Ct","Dallas","TX","75201","Priya Nagarajan",true),outbound:mkShipLeg("888910445521"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0008",user:"Marcus Johnson",email:"mjohnson@amwins.com",phone:"312-555-0199",sn:"",oldSn:"",opco:"Chicago (CHI)",loc:"Chicago, IL",status:"pending_scheduling",appt:"",tech:"",date:"",track:"",notes:"Awaiting HR start date confirmation. Desk location TBD.",process_type:"onboarding",shipAddr:"",
+    shipping:{...NULL_SHIPPING}},
+  {id:"OB-0009",user:"Hannah Price",email:"hprice@amwins.com",phone:"",sn:"BK33W8J25293P7",oldSn:"",opco:"Atlanta (ATL)",loc:"Atlanta, GA",status:"in_progress",appt:"Virtual",tech:"Micah Harris",date:"2026-03-06",track:"888910552103",notes:"Session started. Intune enrollment in progress.",process_type:"onboarding",shipAddr:"",
+    shipping:{address:mkAddress("","Atlanta","GA","","Hannah Price",false),outbound:mkShipLeg("888910552103"),return:{...NULL_SHIP_LEG}}},
+  {id:"OB-0010",user:"Carlos Mendez",email:"cmendez@amwins.com",phone:"",sn:"0F3G5NP25073P7",oldSn:"",opco:"Scottsdale, AZ",loc:"Scottsdale, AZ",status:"follow_up",appt:"Virtual",tech:"Isaiah Gourdine",date:"2026-03-04",track:"888910331742",notes:"User had VPN issues during session. Follow-up scheduled Mar 7.",process_type:"onboarding",shipAddr:"Scottsdale, AZ",
+    shipping:{address:mkAddress("","Scottsdale","AZ","","Carlos Mendez",false),outbound:mkShipLeg("888910331742"),return:{...NULL_SHIP_LEG}}},
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OFFBOARDING DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── OFFBOARDING WORKFLOW ──────────────────────────────────────────────────
+// Real workflow: ServiceNow ticket → log to SharePoint → initial email →
+//               follow-up 1 → follow-up 2 → escalate → resolve → close
+//
+// Integration hooks (all frontend-only for now):
+//   logToTracker  → future: POST to SharePoint list
+//   sendEmail     → future: trigger Power Automate / ServiceNow email action
+//   escalate      → future: update ServiceNow ticket + notify manager
+// ──────────────────────────────────────────────────────────────────────────
+// ─── OFFBOARDING WORKFLOW MODEL ───────────────────────────────────────────────
+//
+// STATUS × RECOVERY LOOP design:
+//   A single `status` field drives the progress bar and action gating.
+//   `recoveryLoop` (1 or 2) differentiates the first attempt from the second.
+//   Within loop 1, the normal sequence is:
+//     new → label_sent → awaiting_movement →
+//     followup_1_sent → followup_2_sent → needs_review →
+//     investigating → resolved → closed
+//   If investigation surfaces a confirmed address, the tech creates a new label
+//   and the case re-enters label_sent with recoveryLoop=2 and isOverdue=true.
+//   Loop 2 then runs: label_sent → awaiting_movement →
+//     secondary_followup_1 → secondary_followup_2 → escalated → resolved → closed
+//
+// FUTURE INTEGRATION HOOKS:
+//   dispatch(id, "send_label")          → FedEx POST /v1/ship/shipments
+//   dispatch(id, "send_followup_1")     → email service / Power Automate trigger
+//   shipping.return.lastMovementAt      → polled via FedEx GET /v1/track/{trackingNumber}
+//   recoveryLoop===2 && isOverdue===true → flag for manager dashboard / SLA breach alert
+// ─────────────────────────────────────────────────────────────────────────────
+const OFF_STAT={
+  new:               {l:"New",               c:C.gray,   bg:C.graySoft,   bd:C.grayBorder},
+  label_sent:        {l:"Label Sent",        c:C.cyan,   bg:C.cyanSoft,   bd:C.cyanBorder},
+  awaiting_movement: {l:"Awaiting Movement", c:C.accent, bg:C.accentSoft, bd:C.accentBorder},
+  followup_1_sent:   {l:"Follow-Up 1",       c:C.amber,  bg:C.amberSoft,  bd:C.amberBorder},
+  followup_2_sent:   {l:"Follow-Up 2",       c:C.orange, bg:C.orangeSoft, bd:C.orangeBorder},
+  needs_review:      {l:"Needs Review",      c:C.red,    bg:C.redSoft,    bd:C.redBorder},
+  investigating:     {l:"Investigating",     c:C.purple, bg:C.purpleSoft, bd:C.purpleBorder},
+  secondary_followup_1:{l:"Loop 2 Follow-Up 1",c:C.amber,bg:C.amberSoft, bd:C.amberBorder},
+  secondary_followup_2:{l:"Loop 2 Follow-Up 2",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},
+  escalated:         {l:"Escalated",         c:C.red,    bg:C.redSoft,    bd:C.redBorder},
+  resolved:          {l:"Resolved",          c:C.green,  bg:C.greenSoft,  bd:C.greenBorder},
+  closed:            {l:"Closed",            c:C.gray,   bg:C.graySoft,   bd:C.grayBorder},
+};
+// Loop-1 stage order for the progress bar (loop 2 uses the same bar, rebased)
+const OFF_STAGES_L1=["new","label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","resolved","closed"];
+const OFF_STAGES_L2=["investigating","label_sent","awaiting_movement","secondary_followup_1","secondary_followup_2","escalated","resolved","closed"];
+// ─── OFFBOARDING WORKLOAD CONFIG ──────────────────────────────────────────────
+// OFFBOARDING_WORKLOAD_MINUTES: estimated effort per active offboarding case.
+// Tune this value as you gather real data on coordinator time-per-case.
+// Consumed by: TeamWorkloadView, OperationsWorkloadPlanner → capRows
+const OFFBOARDING_WORKLOAD_MINUTES=40;
+const OFF_ACTIVE_STATUSES=["new","label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","secondary_followup_1","secondary_followup_2","escalated"];
+// Helper — returns a local ISO timestamp string
+const offNow=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
+// Append an event to an offboarding record's history (immutable)
+const offAddEvent=(rec,type,by,detail)=>({
+  ...rec,
+  history:[...(rec.history||[]),{ts:offNow(),type,by,detail}],
+});
+
+const OFFBOARDING=[
+  // ── Helper: build the expanded shipping.return object ─────────────────────
+  // shipping.return shape:
+  //   carrier, trackingNumber, labelId, labelStatus, createdAt,
+  //   lastMovementAt,  ← polled from FedEx; null until first scan
+  //   destinationType: "warehouse"|"unknown"
+  //   address: NULL_SHIP_ADDRESS-shaped object
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // OFF-0001 – closed, walk-in return, loop 1
+  {
+    id:"OFF-0001",status:"closed",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Mary Barnett",email:"mbarnett@amwins.com",managerName:"",managerEmail:"",
+    sn:"0F39B8K24233MR",assetTag:"",opco:"Atlanta, GA (Dutch Valley)",loc:"Atlanta, GA (Dutch Valley)",
+    taskId:"SCTASK0218401",lastWorkingDay:"2026-01-10",
+    loggedToTracker:true,loggedDate:"2026-01-11",
+    initialEmailDate:"2026-01-11",followup1Date:null,followup2Date:null,
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:"2026-01-15",
+    date:"2026-01-15",track:"",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:{...NULL_SHIP_ADDRESS,recipientName:"Mary Barnett",city:"Atlanta",state:"GA"},
+      outbound:{...NULL_SHIP_LEG},
+      return:{...NULL_SHIP_LEG,destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Device collected onsite.",
+    history:[
+      {ts:"2026-01-11 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label emailed. Device collected onsite same day."},
+      {ts:"2026-01-15 11:00",type:"resolved",by:"ITAM Coordinator",detail:"Device collected onsite. Case resolved."},
+      {ts:"2026-01-15 11:30",type:"closed",by:"ITAM Coordinator",detail:"Case closed."},
+    ],
+  },
+  // OFF-0002 – closed, walk-in return, loop 1
+  {
+    id:"OFF-0002",status:"closed",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Sevin Stone",email:"sstone@amwins.com",managerName:"",managerEmail:"",
+    sn:"0F3FQHK24023FB",assetTag:"",opco:"PTC",loc:"Charlotte (PTC)",
+    taskId:"SCTASK0218502",lastWorkingDay:"2026-01-18",
+    loggedToTracker:true,loggedDate:"2026-01-19",
+    initialEmailDate:"2026-01-19",followup1Date:null,followup2Date:null,
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:"2026-01-20",
+    date:"2026-01-20",track:"",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:{...NULL_SHIP_ADDRESS,recipientName:"Sevin Stone",city:"Charlotte",state:"NC"},
+      outbound:{...NULL_SHIP_LEG},
+      return:{...NULL_SHIP_LEG,destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Walk-in return at PTC.",
+    history:[
+      {ts:"2026-01-19 10:00",type:"label_sent",by:"Anthony Cousin",detail:"Return label sent."},
+      {ts:"2026-01-20 14:00",type:"resolved",by:"Anthony Cousin",detail:"Walk-in return completed."},
+      {ts:"2026-01-20 14:30",type:"closed",by:"Anthony Cousin",detail:"Closed."},
+    ],
+  },
+  // OFF-0003 – awaiting_movement, loop 1, label sent but no scan yet
+  {
+    id:"OFF-0003",status:"awaiting_movement",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:true,
+    user:"Jessica Madero",email:"jmadero@amwins.com",managerName:"",managerEmail:"",
+    sn:"0F37PT724053FB",assetTag:"",opco:"Scottsdale, AZ",loc:"Scottsdale, AZ",
+    taskId:"SCTASK0219699",lastWorkingDay:"2026-02-07",
+    loggedToTracker:true,loggedDate:"2026-02-10",
+    initialEmailDate:"2026-02-10",followup1Date:null,followup2Date:null,
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-10",track:"888910360547",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:mkAddress("","Scottsdale","AZ","","Jessica Madero",false),
+      outbound:{...NULL_SHIP_LEG},
+      return:{...mkShipLeg("888910360547","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Return label emailed 2/10. Awaiting first FedEx scan.",
+    history:[
+      {ts:"2026-02-10 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed. SCTASK0219699."},
+      {ts:"2026-02-10 09:05",type:"awaiting_movement",by:"System","detail":"Case moved to Awaiting Movement. FedEx scan pending."},
+    ],
+  },
+  // OFF-0004 – followup_2_sent, loop 1, no tracking movement
+  {
+    id:"OFF-0004",status:"followup_2_sent",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Ava Jones",email:"ajones@amwins.com",managerName:"",managerEmail:"",
+    sn:"PF4244WV",assetTag:"LT-3310",opco:"Scottsdale, AZ",loc:"Scottsdale, AZ",
+    taskId:"SCTASK0221608",lastWorkingDay:"2026-02-12",
+    loggedToTracker:true,loggedDate:"2026-02-14",
+    initialEmailDate:"2026-02-14",followup1Date:"2026-02-21",followup2Date:"2026-03-01",
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-14",track:"",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:{...NULL_SHIP_ADDRESS,recipientName:"Ava Jones",city:"Scottsdale",state:"AZ"},
+      outbound:{...NULL_SHIP_LEG},
+      return:{...NULL_SHIP_LEG,destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"No response. Label sent but never scanned. Follow-Up 2 sent 3/1.",
+    history:[
+      {ts:"2026-02-14 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed. SCTASK0221608."},
+      {ts:"2026-02-14 09:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2026-02-21 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"No movement after 7 days. Follow-up 1 sent."},
+      {ts:"2026-03-01 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"Still no movement. Follow-up 2 sent."},
+    ],
+  },
+  // OFF-0005 – needs_review, loop 1 — ready for escalation decision
+  {
+    id:"OFF-0005",status:"needs_review",recoveryLoop:1,isOverdue:true,needsReview:true,
+    investigationStatus:"pending",userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Ruth Lopez",email:"rlopez@amwins.com",managerName:"",managerEmail:"",
+    sn:"PF3LN9T4",assetTag:"",opco:"Plano, TX",loc:"Plano, TX",
+    taskId:"SCTASK0223036",lastWorkingDay:"2026-02-15",
+    loggedToTracker:true,loggedDate:"2026-02-17",
+    initialEmailDate:"2026-02-17",followup1Date:"2026-02-24",followup2Date:"2026-03-03",
+    needsReviewDate:"2026-03-10",investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-17",track:"888843359119",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:mkAddress("","Plano","TX","","Ruth Lopez",false),
+      outbound:{...NULL_SHIP_LEG},
+      return:{...mkShipLeg("888843359119","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Label created but no scan. Both follow-ups sent. Flagged for review.",
+    history:[
+      {ts:"2026-02-17 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed. SCTASK0223036."},
+      {ts:"2026-02-17 09:10",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2026-02-24 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"No movement after 7 days. Follow-up 1 sent."},
+      {ts:"2026-03-03 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"No movement after 14 days. Follow-up 2 sent."},
+      {ts:"2026-03-10 09:00",type:"needs_review",by:"ITAM Coordinator",detail:"Flagged Needs Review. No response or scan after 21 days."},
+    ],
+  },
+  // OFF-0006 – investigating, loop 1 — address being verified
+  {
+    id:"OFF-0006",status:"investigating",recoveryLoop:1,isOverdue:true,needsReview:true,
+    investigationStatus:"address_lookup",userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Wayne Brewer",email:"wbrewer@amwins.com",managerName:"",managerEmail:"",
+    sn:"012393321957",assetTag:"LT-2870",opco:"Charlotte, NC (Tyvola)",loc:"Charlotte, NC (Tyvola)",
+    taskId:"SCTASK0223089",lastWorkingDay:"2026-02-16",
+    loggedToTracker:true,loggedDate:"2026-02-18",
+    initialEmailDate:"2026-02-18",followup1Date:"2026-02-25",followup2Date:"2026-03-04",
+    needsReviewDate:"2026-03-11",investigationDate:"2026-03-14",
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-18",track:"888888189567",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:{...NULL_SHIP_ADDRESS,recipientName:"Wayne Brewer",city:"Charlotte",state:"NC"},
+      outbound:{...NULL_SHIP_LEG},
+      return:{...mkShipLeg("888888189567","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Under investigation. Attempting to confirm current mailing address.",
+    history:[
+      {ts:"2026-02-18 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed."},
+      {ts:"2026-02-18 09:10",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2026-02-25 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"No movement. Follow-up 1 sent."},
+      {ts:"2026-03-04 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"No movement. Follow-up 2 sent."},
+      {ts:"2026-03-11 09:00",type:"needs_review",by:"ITAM Coordinator",detail:"Flagged Needs Review."},
+      {ts:"2026-03-14 10:00",type:"investigating",by:"ITAM Coordinator",detail:"Investigation started. Contacting HR for current address."},
+    ],
+  },
+  // OFF-0007 – label_sent loop 2, OVERDUE — secondary label created after address confirmed
+  {
+    id:"OFF-0007",status:"label_sent",recoveryLoop:2,isOverdue:true,needsReview:false,
+    investigationStatus:"address_confirmed",userEmailConfirmed:true,userAddressConfirmed:true,
+    user:"Monique Ferro",email:"mferro@amwins.com",managerName:"",managerEmail:"",
+    sn:"PF4LBM8T",assetTag:"",opco:"North Kingstown, RI",loc:"North Kingstown, RI",
+    taskId:"SCTASK0222846",lastWorkingDay:"2026-02-17",
+    loggedToTracker:true,loggedDate:"2026-02-19",
+    initialEmailDate:"2026-02-19",followup1Date:"2026-02-26",followup2Date:"2026-03-05",
+    needsReviewDate:"2026-03-12",investigationDate:"2026-03-15",
+    addressReceivedDate:"2026-03-20",secondaryLabelCreatedDate:"2026-03-21",
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-19",track:"888872656868",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:mkAddress("44 Ocean Ave","North Kingstown","RI","02852","Monique Ferro",true),
+      outbound:{...NULL_SHIP_LEG},
+      // Loop 2 label — new tracking number, destination confirmed address
+      return:{...mkShipLeg("794500001234567","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"⚠️ RECOVERY LOOP 2 — OVERDUE. New label sent to confirmed address 3/21.",
+    history:[
+      {ts:"2026-02-19 10:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 1] Return label created and emailed."},
+      {ts:"2026-02-19 10:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2026-02-26 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"[Loop 1] No movement. Follow-up 1 sent."},
+      {ts:"2026-03-05 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"[Loop 1] No movement. Follow-up 2 sent."},
+      {ts:"2026-03-12 09:00",type:"needs_review",by:"ITAM Coordinator",detail:"[Loop 1] Flagged Needs Review."},
+      {ts:"2026-03-15 10:00",type:"investigating",by:"ITAM Coordinator",detail:"Investigation: reaching HR for forwarding address."},
+      {ts:"2026-03-20 14:00",type:"address_received",by:"ITAM Coordinator",detail:"Confirmed address received from HR: 44 Ocean Ave, North Kingstown RI 02852."},
+      {ts:"2026-03-21 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 2] Secondary label created (794500001234567) and emailed to confirmed address."},
+    ],
+  },
+  // OFF-0008 – escalated, loop 2, OVERDUE — secondary follow-ups exhausted
+  {
+    id:"OFF-0008",status:"escalated",recoveryLoop:2,isOverdue:true,needsReview:true,
+    investigationStatus:"address_confirmed",userEmailConfirmed:true,userAddressConfirmed:true,
+    user:"Daija Francis",email:"dfrancis@amwins.com",managerName:"",managerEmail:"",
+    sn:"PF3F4DBR",assetTag:"LT-4101",opco:"Atlanta, GA",loc:"Atlanta, GA (3630 Peachtree Rd)",
+    taskId:"SCTASK0189091",lastWorkingDay:"2025-03-07",
+    loggedToTracker:true,loggedDate:"2025-03-10",
+    initialEmailDate:"2025-03-10",followup1Date:"2025-03-24",followup2Date:"2025-04-07",
+    needsReviewDate:"2025-04-21",investigationDate:"2025-05-01",
+    addressReceivedDate:"2025-05-10",secondaryLabelCreatedDate:"2025-05-13",
+    secondaryFollowup1Date:"2025-05-27",secondaryFollowup2Date:"2025-06-10",
+    escalationDate:"2025-06-20",resolvedDate:null,
+    date:"2025-03-10",track:"881217933140",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:mkAddress("3630 Peachtree Rd NE","Atlanta","GA","30326","Daija Francis",false),
+      outbound:{...NULL_SHIP_LEG},
+      return:{...mkShipLeg("794600009876543","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"⚠️ RECOVERY LOOP 2 — OVERDUE 365+ DAYS. Both secondary follow-ups sent. Escalated to manager.",
+    history:[
+      {ts:"2025-03-10 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 1] Return label emailed. SCTASK0189091."},
+      {ts:"2025-03-10 09:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2025-03-24 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"[Loop 1] No movement. Follow-up 1 sent."},
+      {ts:"2025-04-07 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"[Loop 1] No movement. Follow-up 2 sent."},
+      {ts:"2025-04-21 09:00",type:"needs_review",by:"ITAM Coordinator",detail:"[Loop 1] Flagged Needs Review."},
+      {ts:"2025-05-01 10:00",type:"investigating",by:"ITAM Coordinator",detail:"Investigation started."},
+      {ts:"2025-05-10 14:00",type:"address_received",by:"ITAM Coordinator",detail:"Address confirmed via HR records."},
+      {ts:"2025-05-13 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 2] Secondary label (794600009876543) created and emailed."},
+      {ts:"2025-05-13 09:05",type:"awaiting_movement",by:"System",detail:"[Loop 2] Awaiting FedEx scan."},
+      {ts:"2025-05-27 09:00",type:"secondary_followup_1",by:"ITAM Coordinator",detail:"[Loop 2] No movement. Secondary follow-up 1 sent."},
+      {ts:"2025-06-10 09:00",type:"secondary_followup_2",by:"ITAM Coordinator",detail:"[Loop 2] Still no movement. Secondary follow-up 2 sent."},
+      {ts:"2025-06-20 10:00",type:"escalated",by:"ITAM Coordinator",detail:"Escalated to manager. Device unrecovered 100+ days in loop 2."},
+    ],
+  },
+  // OFF-0009 – followup_1_sent, loop 1 — 7 days no movement
+  {
+    id:"OFF-0009",status:"followup_1_sent",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
+    user:"Kevin Thompson",email:"kthompson@amwins.com",managerName:"",managerEmail:"",
+    sn:"PF3Z57HR",assetTag:"",opco:"Charlotte, NC (Tyvola)",loc:"Charlotte, NC (Tyvola)",
+    taskId:"SCTASK0223075",lastWorkingDay:"2026-02-16",
+    loggedToTracker:true,loggedDate:"2026-02-18",
+    initialEmailDate:"2026-02-18",followup1Date:"2026-02-25",followup2Date:null,
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-18",track:"",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:{...NULL_SHIP_ADDRESS,recipientName:"Kevin Thompson",city:"Charlotte",state:"NC"},
+      outbound:{...NULL_SHIP_LEG},
+      return:{...NULL_SHIP_LEG,destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Label sent 2/18. No scan after 7 days. Follow-up 1 sent 2/25.",
+    history:[
+      {ts:"2026-02-18 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed. SCTASK0223075."},
+      {ts:"2026-02-18 09:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+      {ts:"2026-02-25 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"No movement after 7 days. Follow-up 1 sent."},
+    ],
+  },
+  // OFF-0010 – awaiting_movement, loop 1 — fresh label, no scan yet
+  {
+    id:"OFF-0010",status:"awaiting_movement",recoveryLoop:1,isOverdue:false,needsReview:false,
+    investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:true,
+    user:"Jessica Hooks",email:"jhooks@amwins.com",managerName:"",managerEmail:"",
+    sn:"BK3374625243P7",assetTag:"",opco:"McDonough, GA",loc:"McDonough, GA",
+    taskId:"SCTASK0222962",lastWorkingDay:"2026-02-18",
+    loggedToTracker:true,loggedDate:"2026-02-20",
+    initialEmailDate:"2026-02-20",followup1Date:null,followup2Date:null,
+    needsReviewDate:null,investigationDate:null,
+    addressReceivedDate:null,secondaryLabelCreatedDate:null,
+    secondaryFollowup1Date:null,secondaryFollowup2Date:null,
+    escalationDate:null,resolvedDate:null,
+    date:"2026-02-20",track:"888873111670",process_type:"offboarding",returnReason:"offboarding_return",
+    shipping:{
+      address:mkAddress("","McDonough","GA","","Jessica Hooks",false),
+      outbound:{...NULL_SHIP_LEG},
+      return:{...mkShipLeg("888873111670","created"),destinationType:"warehouse",lastMovementAt:null},
+    },
+    notes:"Label sent 2/20. Awaiting first FedEx scan.",
+    history:[
+      {ts:"2026-02-20 10:00",type:"label_sent",by:"ITAM Coordinator",detail:"Return label created and emailed. SCTASK0222962."},
+      {ts:"2026-02-20 10:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
+    ],
+  },
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BREAK-FIX REPAIR CENTER DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const BF_STAT={ticket_submitted:{l:"Ticket Submitted",c:C.gray,bg:C.graySoft,bd:C.grayBorder},vendor_review:{l:"Vendor Review",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},repair_approved:{l:"Repair Approved",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},device_sent:{l:"Device Sent",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},repair_in_progress:{l:"Repair In Progress",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},device_returned:{l:"Device Returned",c:C.green,bg:C.greenSoft,bd:C.greenBorder},closed:{l:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},replacement_issued:{l:"Replacement Issued",c:C.accent,bg:C.accentSoft,bd:C.accentBorder}};
+const BF_STAGES=["ticket_submitted","vendor_review","repair_approved","device_sent","repair_in_progress","device_returned","closed"];
+const BREAKFIX=[
+  // Break-fix: both legs possible — return: broken device TO vendor; outbound: replacement FROM warehouse TO user
+  // BF-0001: repair_in_progress — device already at Microsoft, no replacement issued yet
+  {id:"BF-0001",asset:"0F37Q6G24053FB",sn:"0F37Q6G24053FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Tina Walters",tech:"Micah Harris",status:"repair_in_progress",issue:"Network connectivity issues | Cant wipe device via intune",msCase:"MS-4820193",submitted:"2026-02-19",lastUpdate:"2026-03-04",replacementSn:"",process_type:"break_fix",notes:"Sent to Microsoft. Service order pending.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Tina Walters",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"in_transit"}}},
+  // BF-0002: repair_in_progress — device at Microsoft
+  {id:"BF-0002",asset:"BK334PM23463FB",sn:"BK334PM23463FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Greg Marshall",tech:"Anthony Cousin",status:"repair_in_progress",issue:"Device wont power on",msCase:"MS-4820207",submitted:"2026-02-25",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"No POST. Suspected motherboard. Under warranty.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Greg Marshall"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"in_transit"}}},
+  // BF-0003: device_sent — shipping box sent to user, device in transit to MS
+  {id:"BF-0003",asset:"0F34C6424223GT",sn:"0F34C6424223GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Amanda Reyes",tech:"Isaiah Gourdine",status:"device_sent",issue:"Bad USB-C Port",msCase:"MS-4820211",submitted:"2026-02-25",lastUpdate:"2026-03-01",replacementSn:"",process_type:"break_fix",notes:"Shipping box sent. User packaging device.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Amanda Reyes"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"created"}}},
+  // BF-0004: repair_in_progress — no tracking yet
+  {id:"BF-0004",asset:"0F38TM324343GT",sn:"0F38TM324343GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Derek Collins",tech:"Micah Harris",status:"repair_in_progress",issue:"System Crash",msCase:"MS-4820215",submitted:"2026-02-25",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"BSOD frequent. Diagnostics requested by MS.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0005: vendor_review — awaiting MS decision on replacement
+  {id:"BF-0005",asset:"BK3368Y23463FB",sn:"BK3368Y23463FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Lisa Park",tech:"Anthony Cousin",status:"vendor_review",issue:"System Crashes & does not connect to VPN",msCase:"MS-4820220",submitted:"2026-02-25",lastUpdate:"2026-02-28",replacementSn:"",process_type:"break_fix",notes:"MS reviewing logs. May require replacement.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0006: repair_approved — awaiting shipment instructions from MS
+  {id:"BF-0006",asset:"0F34XMP24433GT",sn:"0F34XMP24433GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Chris Nguyen",tech:"Isaiah Gourdine",status:"repair_approved",issue:"Cracked screen",msCase:"MS-4820225",submitted:"2026-02-25",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Accidental damage. Repair approved under Complete for Business.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0007: repair_in_progress — at MS engineering
+  {id:"BF-0007",asset:"BK337DB25203HJ",sn:"BK337DB25203HJ",model:"Surface Laptop 7",mfr:"Microsoft",user:"Natalie Brooks",tech:"Micah Harris",status:"repair_in_progress",issue:"Stuck in provisioning loop",msCase:"MS-4820230",submitted:"2026-02-27",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Firmware issue. MS escalated to engineering team.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0008 through BF-0013: ticket_submitted — no shipping activity yet
+  {id:"BF-0008",asset:"BK33DCV24023FB",sn:"BK33DCV24023FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Robert Kim",tech:"Anthony Cousin",status:"ticket_submitted",issue:"Damaged mousepad",msCase:"",submitted:"2026-03-03",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Awaiting MS case creation.",
+    shipping:{...NULL_SHIPPING}},
+  {id:"BF-0009",asset:"0F3MYV424193GT",sn:"0F3MYV424193GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Emily Watson",tech:"Isaiah Gourdine",status:"ticket_submitted",issue:"Bad USB-C Port",msCase:"",submitted:"2026-03-03",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Second USB-C failure this model. Warranty claim pending.",
+    shipping:{...NULL_SHIPPING}},
+  {id:"BF-0010",asset:"0F398K624393MR",sn:"0F398K624393MR",model:"Surface Laptop 6",mfr:"Microsoft",user:"Jason Lee",tech:"Micah Harris",status:"vendor_review",issue:"Device powers on but no display | Has buzzing sound",msCase:"MS-4820245",submitted:"2026-03-03",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Hardware failure suspected. MS reviewing for replacement.",
+    shipping:{...NULL_SHIPPING}},
+  {id:"BF-0011",asset:"0F38RMP24253GT",sn:"0F38RMP24253GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Samantha Cruz",tech:"Anthony Cousin",status:"ticket_submitted",issue:"Bad USB-C Port | External monitors aren't recognized",msCase:"",submitted:"2026-03-03",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"USB-C port cluster issue.",
+    shipping:{...NULL_SHIPPING}},
+  {id:"BF-0012",asset:"BK3334323493FB",sn:"BK3334323493FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Daniel Wright",tech:"Isaiah Gourdine",status:"ticket_submitted",issue:"System Crash",msCase:"",submitted:"2026-03-05",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Intermittent crashes. Logs being collected.",
+    shipping:{...NULL_SHIPPING}},
+  {id:"BF-0013",asset:"0F37PPK24053FB",sn:"0F37PPK24053FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Michelle Torres",tech:"Micah Harris",status:"ticket_submitted",issue:"Bad USB-C Port",msCase:"",submitted:"2026-03-05",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Port intermittent. User has loaner dock.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0014: closed — repaired unit returned to user
+  {id:"BF-0014",asset:"0F34CB624223GT",sn:"0F34CB624223GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Kevin Patel",tech:"Anthony Cousin",status:"closed",issue:"Display is damaged",msCase:"MS-4819850",submitted:"2026-01-05",lastUpdate:"2026-02-15",replacementSn:"Same unit repair",process_type:"break_fix",notes:"Screen replaced by MS. Returned to user.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Kevin Patel"},outbound:{...NULL_SHIP_LEG,labelStatus:"delivered"},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
+  // BF-0015: closed — Dell onsite tech, no shipping needed
+  {id:"BF-0015",asset:"8N0S1H4",sn:"8N0S1H4",model:"Dell PA14250",mfr:"Dell",user:"Brian Wells",tech:"Isaiah Gourdine",status:"closed",issue:"Bad fan",msCase:"DELL-SR-1120045",submitted:"2026-02-10",lastUpdate:"2026-02-28",replacementSn:"Same unit repair",process_type:"break_fix",notes:"Fan replaced under ProSupport. Dell onsite tech.",
+    shipping:{...NULL_SHIPPING}},
+  // BF-0016: replacement_issued — both legs: broken device returned, replacement shipped out
+  {id:"BF-0016",asset:"BK3393G25243P7",sn:"BK3393G25243P7",model:"Surface Laptop 7",mfr:"Microsoft",user:"Laura Chen",tech:"Micah Harris",status:"replacement_issued",issue:"Liquid damage - coffee",msCase:"MS-4820100",submitted:"2026-02-13",lastUpdate:"2026-03-01",replacementSn:"BK33W4R25293P7",process_type:"break_fix",notes:"Not covered under warranty. Complete for Business claim. Replacement issued.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Laura Chen"},outbound:{...NULL_SHIP_LEG,labelStatus:"delivered"},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
+  // BF-0017: ticket_submitted — no shipping yet
+  {id:"BF-0017",asset:"0F339FB25033GT",sn:"0F339FB25033GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Thomas Reed",tech:"Anthony Cousin",status:"ticket_submitted",issue:"Device will not boot up",msCase:"",submitted:"2026-03-05",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"No signs of life. Potential PSU failure.",
+    shipping:{...NULL_SHIPPING}},
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RETURN QUEUE DATA (multi-process) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const RTN_REASON={refresh_return:{l:"Refresh Return",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},offboarding_return:{l:"Offboarding Return",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},unassigned_recovery:{l:"Unassigned Recovery",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},lease_vendor_return:{l:"Lease Vendor Return",c:C.gray,bg:C.graySoft,bd:C.grayBorder}};
+const RTN_STAT={label_sent:{l:"Label Sent",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},in_transit:{l:"In Transit",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},received:{l:"Received",c:C.green,bg:C.greenSoft,bd:C.greenBorder},inspecting:{l:"Inspecting",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},staged_for_lfs:{l:"Staged for LFS",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},shipped_to_vendor:{l:"Shipped to Vendor",c:C.gray,bg:C.graySoft,bd:C.grayBorder},closed:{l:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},overdue:{l:"Overdue",c:C.red,bg:C.redSoft,bd:C.redBorder}};
+const RETURNS=[
+  // refresh_return: return leg only — old device shipped FROM user back to warehouse
+  {id:"RTN-0001",asset:"TP-2801",sn:"TP-2801",model:"Lenovo ThinkPad Yoga",user:"Sam Vives",reason:"refresh_return",status:"label_sent",tech:"Anthony Cousin",date:"2026-03-03",track:"FX-RTN-2026-0045",ref:"RC-2026-0045",process_type:"refresh",notes:"Prepaid FedEx label emailed. 10-day SLA.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Sam Vives",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("FX-RTN-2026-0045","created")}},
+  // refresh_return: already received — no active tracking needed
+  {id:"RTN-0002",asset:"TP-2654",sn:"TP-2654",model:"Lenovo ThinkPad X1",user:"Lynn Sailors",reason:"refresh_return",status:"received",tech:"Warehouse Tech",date:"2026-03-05",track:"",ref:"RC-2026-0055",process_type:"refresh",notes:"Scanned at PTC warehouse. Condition: Good.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Lynn Sailors"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
+  // refresh_return: hand delivery, no carrier label
+  {id:"RTN-0003",asset:"TP-2802",sn:"TP-2802",model:"Lenovo ThinkPad Yoga",user:"Angeley Vang",reason:"refresh_return",status:"staged_for_lfs",tech:"Jakob Null",date:"2026-02-25",track:"",ref:"RC-2026-0060",process_type:"refresh",notes:"CC3 hand delivery. Staged for LFS batch CC3-2026-001.",
+    shipping:{...NULL_SHIPPING}},
+  // lease_vendor_return: return leg only — LFS batch shipment
+  {id:"RTN-0004",asset:"TP-2805",sn:"TP-2805",model:"Lenovo ThinkPad Yoga",user:"Nicholas Prince",reason:"lease_vendor_return",status:"shipped_to_vendor",tech:"Jakob Null",date:"2026-02-18",track:"LFS-2026-CC3-001",ref:"RC-2026-0070",process_type:"retirement",notes:"LFS batch shipped. 4 devices. Vendor confirmed receipt Mar 1.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"LFS Vendor",company:"LFS",city:"Charlotte",state:"NC",residential:false},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("LFS-2026-CC3-001","delivered","LFS")}},
+  // offboarding_return: return leg only — label sent, awaiting pickup
+  {id:"RTN-0005",asset:"LT-4455",sn:"PF3LN9T4",model:"Lenovo ThinkPad X1",user:"Rachel Torres",reason:"offboarding_return",status:"label_sent",tech:"",date:"2026-03-04",track:"FX-RTN-2026-0078",ref:"OFF-0005",process_type:"offboarding",notes:"AD disabled. Return label sent. 5-day SLA started.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Rachel Torres"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("FX-RTN-2026-0078","created")}},
+  // offboarding_return: no label created, employee unresponsive
+  {id:"RTN-0006",asset:"LT-3310",sn:"PF4244WV",model:"Lenovo ThinkPad T14",user:"Ava Jones",reason:"offboarding_return",status:"overdue",tech:"",date:"2026-02-14",track:"",ref:"OFF-0004",process_type:"offboarding",notes:"No response. 20 days overdue. Manager escalation sent.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Ava Jones",city:"Scottsdale",state:"AZ"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG}}},
+  // offboarding_return: label sent, in transit
+  {id:"RTN-0007",asset:"LT-2870",sn:"012393321957",model:"Surface Pro 8",user:"Wayne Brewer",reason:"offboarding_return",status:"in_transit",tech:"",date:"2026-02-18",track:"888888189567",ref:"OFF-0006",process_type:"offboarding",notes:"Label sent 2/18. Tracking shows in transit.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Wayne Brewer",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("888888189567","in_transit")}},
+  // unassigned_recovery: no shipping — device found onsite
+  {id:"RTN-0008",asset:"LT-3890",sn:"UNASSIGNED-001",model:"Dell Latitude 5440",user:"\u2014",reason:"unassigned_recovery",status:"inspecting",tech:"Isaiah Gourdine",date:"2026-03-01",track:"",ref:"",process_type:"redeployment",notes:"Found unassigned in BHM office. No AMS record. Under investigation.",
+    shipping:{...NULL_SHIPPING}},
+  // unassigned_recovery: no shipping — device recovered from vacated desk
+  {id:"RTN-0009",asset:"LT-3901",sn:"UNASSIGNED-002",model:"Surface Laptop 5",user:"\u2014",reason:"unassigned_recovery",status:"received",tech:"Anthony Cousin",date:"2026-02-28",track:"",ref:"",process_type:"redeployment",notes:"Recovered from vacated desk at PTC. Wiped and re-imaged for redeployment.",
+    shipping:{...NULL_SHIPPING}},
+  // refresh_return: in transit, old device shipped back from remote user
+  {id:"RTN-0010",asset:"TP-2780",sn:"TP-2780",model:"Lenovo ThinkPad Yoga",user:"David Park",reason:"refresh_return",status:"in_transit",tech:"Micah Harris",date:"2026-03-10",track:"888910553212",ref:"RC-2026-0030",process_type:"refresh",notes:"Chicago refresh. Old device shipped back to PTC.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"David Park",city:"Chicago",state:"IL"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("888910553212","in_transit")}},
+  // lease_vendor_return: delivered and closed
+  {id:"RTN-0011",asset:"LT-1887",sn:"PF2JKNM4",model:"Lenovo ThinkPad X1 Carbon Gen 9",user:"\u2014",reason:"lease_vendor_return",status:"closed",tech:"Warehouse Tech",date:"2026-02-28",track:"LFS-2026-PTC-002",ref:"",process_type:"retirement",notes:"End of life. LFS confirmed receipt. Cert: CD-2025-0091.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"LFS Vendor",company:"LFS",residential:false},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("LFS-2026-PTC-002","delivered","LFS")}},
+  // offboarding_return: label sent, 365+ days, escalated
+  {id:"RTN-0012",asset:"LT-4101",sn:"PF3F4DBR",model:"Dell Latitude 5440",user:"Daija Francis",reason:"offboarding_return",status:"overdue",tech:"",date:"2025-03-10",track:"881217933140",ref:"OFF-0008",process_type:"offboarding",notes:"365+ days. Escalated. Multiple follow-ups. Box request sent 5/13/25.",
+    shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Daija Francis",city:"Atlanta",state:"GA"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("881217933140","in_transit")}},
+];
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ONBOARDING MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const ObChip=({s})=>{const x=OB_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+function OnboardingModule({setToast,go,auditEvents,setAuditEvents}){
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+  const [q,setQ]=useState("");
+  const stCounts=useMemo(()=>{const c={};ONBOARDING.forEach(o=>{c[o.status]=(c[o.status]||0)+1;});return c;},[]);
+  const filt=useMemo(()=>{let l=ONBOARDING;if(stF!=="all")l=l.filter(o=>o.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(o=>o.user.toLowerCase().includes(s)||o.sn.toLowerCase().includes(s)||o.opco.toLowerCase().includes(s)||o.id.toLowerCase().includes(s));}return l;},[stF,q]);
+  const det=sel?ONBOARDING.find(o=>o.id===sel):null;
+  const active=ONBOARDING.filter(o=>!["completed","canceled"].includes(o.status)).length;
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Onboardings" value={ONBOARDING.length} sub="YTD" color={C.accent}/>
+      <Kpi label="Active" value={active} color={C.amber}/>
+      <Kpi label="Scheduled" value={stCounts.scheduled||0} color={C.cyan}/>
+      <Kpi label="In Progress" value={stCounts.in_progress||0} color={C.accent}/>
+      <Kpi label="Completed" value={stCounts.completed||0} color={C.green}/>
+      <Kpi label="Follow-Up" value={stCounts.follow_up||0} color={C.red} alert={(stCounts.follow_up||0)>0}/>
+    </div>
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search name, serial, location\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      {[["all","All",ONBOARDING.length],...Object.entries(OB_STAT).map(([k,v])=>[k,v.l,stCounts[k]||0])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+    </div>
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 340px)"}}>
+        <table style={{width:"100%",minWidth:900}}><thead><tr>{["ID","Employee","Serial Number","Location","Status","Appt Type","Technician","Date","Tracking"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No onboarding records match.</td></tr>}
+            {filt.map((o,i)=>(<tr key={o.id} onClick={()=>setSel(sel===o.id?null:o.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{o.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{o.user}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{o.sn||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub}}>{o.loc}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><ObChip s={o.status}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:o.appt?C.sub:C.light}}>{o.appt||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:o.tech?C.sub:C.light}}>{o.tech||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{o.date||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===o.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:getTracking(o)?C.accent:C.light}}>{getTracking(o)||"\u2014"}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:370,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user}</div><div style={{marginTop:5}}><ObChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+        <div style={{padding:"10px 18px"}}>{[["Employee",det.user],["Email",det.email||"\u2014"],["Serial Number",det.sn||"\u2014"],["Operating Company",det.opco],["Location",det.loc],["Appointment",det.appt||"\u2014"],["Technician",det.tech||"\u2014"],["Date",det.date||"\u2014"],["Tracking",getTracking(det)||"\u2014"],["Ship Address",getShipAddress(det)||"\u2014"],["Process Type",det.process_type]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Serial Number","Tracking","Date"].includes(l)?MN:SN,color:v==="\u2014"?C.light:C.text,maxWidth:180,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
+        {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>}
+      </div>)}
+    </div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OFFBOARDING MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const OffChip=({s,loop,isOverdue})=>{const x=OFF_STAT[s];if(!x)return null;return (<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}{loop===2&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:C.red,color:"#FFF",marginLeft:3,fontWeight:700}}>L2</span>}{isOverdue&&loop!==2&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:C.orange,color:"#FFF",marginLeft:3,fontWeight:700}}>OD</span>}</span>);};
+function OffboardingModule({setToast,go}){
+  const [records,setRecords]=useState(OFFBOARDING);
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+  const [q,setQ]=useState("");
+  const [inputMode,setInputMode]=useState(null);
+  const [inputVal,setInputVal]=useState({line1:"",city:"",state:"",postalCode:"",email:""});
+  const stCounts=useMemo(()=>{const c={};records.forEach(o=>{c[o.status]=(c[o.status]||0)+1;});return c;},[records]);
+  const filt=useMemo(()=>{let l=records;if(stF!=="all")l=l.filter(o=>o.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(o=>(o.user||"").toLowerCase().includes(s)||(o.sn||"").toLowerCase().includes(s)||(o.loc||"").toLowerCase().includes(s)||(o.taskId||"").toLowerCase().includes(s));}return l;},[records,stF,q]);
+  const det=sel?records.find(o=>o.id===sel):null;
+  // ── Workflow dispatcher ────────────────────────────────────────────────────
+  // FUTURE INTEGRATION HOOKS:
+  //   "send_label"              → FedEx POST /v1/ship/shipments; store trackingNumber in shipping.return
+  //   "send_followup_*"         → email service / Power Automate; body built from off-label template
+  //   "create_secondary_label"  → FedEx POST with confirmed shipping.address as recipient
+  //   shipping.return.lastMovementAt → polled via FedEx GET /v1/track/{trackingNumber}
+  //   recoveryLoop===2 && isOverdue → SLA breach alert / manager dashboard flag
+  const dispatch=(id,action,extra={})=>{
+    const now=offNow();
+    setRecords(prev=>prev.map(o=>{
+      if(o.id!==id)return o;
+      switch(action){
+        case "send_label":{
+          const mockTrk=`794${Array.from({length:15},()=>Math.floor(Math.random()*10)).join("")}`;
+          const newReturn={...NULL_SHIP_LEG,trackingNumber:mockTrk,labelStatus:"created",createdAt:now,destinationType:"warehouse",lastMovementAt:null};
+          return offAddEvent({...o,status:"awaiting_movement",initialEmailDate:o.initialEmailDate||now.slice(0,10),track:mockTrk,shipping:{...o.shipping,return:newReturn}},"label_sent","Current User",`Return label created (${mockTrk}) and emailed to ${o.email||"employee"}.`);
+        }
+        case "send_followup_1":
+          return offAddEvent({...o,status:"followup_1_sent",followup1Date:now.slice(0,10)},"followup_1_sent","Current User","Follow-up 1 sent. No tracking movement after 3 days.");
+        case "send_followup_2":
+          return offAddEvent({...o,status:"followup_2_sent",followup2Date:now.slice(0,10)},"followup_2_sent","Current User","Follow-up 2 sent. No tracking movement after 7 days.");
+        case "mark_needs_review":
+          return offAddEvent({...o,status:"needs_review",needsReview:true,isOverdue:true,needsReviewDate:now.slice(0,10)},"needs_review","Current User","Flagged Needs Review. No response or movement after 14+ days.");
+        case "start_investigation":
+          return offAddEvent({...o,status:"investigating",investigationStatus:"address_lookup",investigationDate:now.slice(0,10)},"investigating","Current User","Investigation started. Verifying current address via HR.");
+        case "record_email":{
+          const em=extra.email||"";if(!em.trim())return o;
+          return offAddEvent({...o,email:em,userEmailConfirmed:true},"update","Current User",`Employee email confirmed: ${em}`);
+        }
+        case "record_address":{
+          const {line1,city,state,postalCode}=extra;if(!line1||!city||!state)return o;
+          const addr={...NULL_SHIP_ADDRESS,recipientName:o.user,line1,city,state,postalCode:postalCode||"",residential:true};
+          return offAddEvent({...o,userAddressConfirmed:true,investigationStatus:"address_confirmed",addressReceivedDate:now.slice(0,10),shipping:{...o.shipping,address:addr}},"address_received","Current User",`Confirmed address recorded: ${line1}, ${city}, ${state} ${postalCode||""}`);
+        }
+        case "create_secondary_label":{
+          const mockTrk=`794${Array.from({length:15},()=>Math.floor(Math.random()*10)).join("")}`;
+          const newReturn={...NULL_SHIP_LEG,trackingNumber:mockTrk,labelStatus:"created",createdAt:now,destinationType:"warehouse",lastMovementAt:null};
+          return offAddEvent({...o,status:"label_sent",recoveryLoop:2,isOverdue:true,secondaryLabelCreatedDate:now.slice(0,10),track:mockTrk,shipping:{...o.shipping,return:newReturn}},"label_sent","Current User",`[Loop 2] Secondary label (${mockTrk}) created and emailed to confirmed address.`);
+        }
+        case "send_secondary_followup_1":
+          return offAddEvent({...o,status:"secondary_followup_1",secondaryFollowup1Date:now.slice(0,10)},"secondary_followup_1","Current User",`[Loop 2] Secondary follow-up 1 sent to ${o.email||"employee email"}.`);
+        case "send_secondary_followup_2":
+          return offAddEvent({...o,status:"secondary_followup_2",secondaryFollowup2Date:now.slice(0,10)},"secondary_followup_2","Current User",`[Loop 2] Secondary follow-up 2 sent to ${o.email||"employee email"}.`);
+        case "escalate":
+          return offAddEvent({...o,status:"escalated",escalationDate:now.slice(0,10)},"escalated","Current User","Case escalated. Manager notified. Device unrecovered.");
+        case "mark_resolved":
+          return offAddEvent({...o,status:"resolved",resolvedDate:now.slice(0,10)},"resolved","Current User","Device return confirmed. Case resolved.");
+        case "close":
+          return offAddEvent({...o,status:"closed"},"closed","Current User","Case closed.");
+        default: return o;
+      }
+    }));
+    const labels={send_label:"Return label created",send_followup_1:"Follow-up 1 sent",send_followup_2:"Follow-up 2 sent",mark_needs_review:"Flagged for review",start_investigation:"Investigation started",record_email:"Email confirmed",record_address:"Address recorded",create_secondary_label:"Secondary label created",send_secondary_followup_1:"Secondary follow-up 1 sent",send_secondary_followup_2:"Secondary follow-up 2 sent",escalate:"Case escalated",mark_resolved:"Marked resolved",close:"Case closed"};
+    setToast(labels[action]||action);
+    if(["record_email","record_address"].includes(action))setInputMode(null);
+  };
+  const availableActions=(o)=>{
+    const {status,recoveryLoop=1,userAddressConfirmed,userEmailConfirmed}=o;
+    const A=[];
+    const btn=(key,label,color,bg,bd)=>A.push({key,label,color,bg,bd});
+    if(status==="new")btn("send_label","Send Return Email + Label",C.cyan,C.cyanSoft,C.cyanBorder);
+    // Loop 1 follow-up chain
+    if((status==="awaiting_movement"||status==="label_sent")&&recoveryLoop===1)btn("send_followup_1","Send Follow-Up 1",C.amber,C.amberSoft,C.amberBorder);
+    if(status==="followup_1_sent"&&recoveryLoop===1)btn("send_followup_2","Send Follow-Up 2",C.orange,C.orangeSoft,C.orangeBorder);
+    if(status==="followup_2_sent"&&recoveryLoop===1)btn("mark_needs_review","Mark Needs Review",C.red,C.redSoft,C.redBorder);
+    if(status==="needs_review")btn("start_investigation","Start Investigation",C.purple,C.purpleSoft,C.purpleBorder);
+    // Address / email capture (available during investigation or needs_review)
+    if((status==="investigating"||status==="needs_review")&&!userEmailConfirmed)btn("record_email","Record User Email",C.cyan,C.cyanSoft,C.cyanBorder);
+    if((status==="investigating"||status==="needs_review")&&!userAddressConfirmed)btn("record_address","Record User Address",C.accent,C.accentSoft,C.accentBorder);
+    if(status==="investigating"&&userAddressConfirmed)btn("create_secondary_label","Create Secondary Label",C.purple,C.purpleSoft,C.purpleBorder);
+    // Loop 2 follow-up chain — label_sent and awaiting_movement both valid entry points
+    if((status==="label_sent"||status==="awaiting_movement")&&recoveryLoop===2)btn("send_secondary_followup_1","Send Secondary Follow-Up 1",C.amber,C.amberSoft,C.amberBorder);
+    if(status==="secondary_followup_1")btn("send_secondary_followup_2","Send Secondary Follow-Up 2",C.orange,C.orangeSoft,C.orangeBorder);
+    // Escalate: available from loop 1 exhaustion, loop 2 exhaustion, investigating, and already-escalated cases
+    if(["secondary_followup_2","secondary_followup_1","followup_2_sent","needs_review","investigating","escalated"].includes(status))btn("escalate","Escalate",C.red,C.redSoft,C.redBorder);
+    // Resolve is available from any active status (device may arrive at any point)
+    if(!["resolved","closed","new"].includes(status))btn("mark_resolved","Mark Resolved",C.green,C.greenSoft,C.greenBorder);
+    if(status==="resolved")btn("close","Close Case",C.gray,C.graySoft,C.grayBorder);
+    return A;
+  };
+  const escalatedCount=(stCounts.escalated||0)+(stCounts.needs_review||0);
+  const overdueCount=records.filter(o=>o.isOverdue).length;
+  const loop2Count=records.filter(o=>o.recoveryLoop===2&&!["resolved","closed"].includes(o.status)).length;
+  const openCount=records.filter(o=>!["resolved","closed"].includes(o.status)).length;
+  const stages=det?(det.recoveryLoop===2?OFF_STAGES_L2:OFF_STAGES_L1):OFF_STAGES_L1;
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total" value={records.length} sub="All records" color={C.accent}/>
+      <Kpi label="Open" value={openCount} color={C.amber}/>
+      <Kpi label="Needs Review / Escalated" value={escalatedCount} color={C.red} alert={escalatedCount>0}/>
+      <Kpi label="Overdue" value={overdueCount} color={C.orange} alert={overdueCount>0}/>
+      <Kpi label="Loop 2 Active" value={loop2Count} color={C.purple} alert={loop2Count>0}/>
+      <Kpi label="Resolved / Closed" value={(stCounts.resolved||0)+(stCounts.closed||0)} color={C.green}/>
+    </div>
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 240px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search name, serial, task ID\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      {[["all","All",records.length],...Object.entries(OFF_STAT).map(([k,v])=>[k,v.l,stCounts[k]||0])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+    </div>
+    {loop2Count>0&&(
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",marginBottom:10,borderRadius:7,background:"rgba(255,93,108,0.08)",border:"1px solid rgba(255,93,108,0.35)",borderLeft:"4px solid "+C.red}}>
+        <span style={{fontSize:16,flexShrink:0}}>{"⚠️"}</span>
+        <div>
+          <span style={{fontSize:12,fontWeight:700,color:C.red,fontFamily:MN}}>RECOVERY LOOP 2 ACTIVE — </span>
+          <span style={{fontSize:11.5,color:C.sub}}>{loop2Count} case{loop2Count>1?"s are":" is"} in secondary recovery. {loop2Count>1?"These devices are":"This device is"} overdue. A new label has been issued to a confirmed address. Track follow-up progress carefully.</span>
+        </div>
+      </div>
+    )}
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 340px)"}}>
+        <table style={{width:"100%",minWidth:940}}><thead><tr>{["ID","Employee","Serial","Location","Status","Loop","Task ID","Last Action"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={8} style={{padding:28,textAlign:"center",color:C.muted}}>No offboarding records match.</td></tr>}
+            {filt.map((o,i)=>{
+              const lastEvt=o.history&&o.history.length>0?o.history[o.history.length-1]:null;
+              const isL2=o.recoveryLoop===2;
+              const rowBase=sel===o.id?C.accentSoft:isL2?C.redSoft+"44":o.isOverdue?C.orangeSoft+"44":i%2===0?C.surface:C.surfaceAlt;
+              return (<tr key={o.id} onClick={()=>setSel(sel===o.id?null:o.id)} style={{cursor:"pointer"}}>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{o.id}</span></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase,fontSize:12,fontWeight:500}}>{o.user}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase,fontFamily:MN,fontSize:10.5,color:C.sub}}>{o.sn}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase,fontSize:11,color:C.sub,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.loc}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase}}><OffChip s={o.status} loop={o.recoveryLoop} isOverdue={o.isOverdue}/></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase}}>
+                  {isL2?<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.redSoft,color:C.red,fontWeight:700,fontFamily:MN}}>LOOP 2</span>:<span style={{fontSize:9,color:C.muted,fontFamily:MN}}>Loop 1</span>}
+                  {o.isOverdue&&<span style={{fontSize:9,padding:"2px 5px",borderRadius:4,background:C.orangeSoft,color:C.orange,fontWeight:700,fontFamily:MN,marginLeft:4}}>OD</span>}
+                </td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase,fontFamily:MN,fontSize:10,color:C.cyan}}>{o.taskId||"\u2014"}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBase,fontSize:10.5,color:C.muted}}>{lastEvt?lastEvt.ts.slice(0,10):"\u2014"}</td>
+              </tr>);
+            })}
+          </tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:420,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:det.recoveryLoop===2?C.redSoft+"55":det.isOverdue?C.orangeSoft+"55":C.panel}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              <span style={{fontFamily:MN,fontSize:13,color:C.accent,fontWeight:700}}>{det.id}</span>
+              {det.taskId&&<span style={{fontFamily:MN,fontSize:11,color:C.cyan,marginLeft:8}}>{det.taskId}</span>}
+              {det.recoveryLoop===2&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.red,color:"#FFF",fontWeight:700,fontFamily:MN,marginLeft:8}}>RECOVERY LOOP 2</span>}
+              {det.isOverdue&&det.recoveryLoop!==2&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.orange,color:"#FFF",fontWeight:700,fontFamily:MN,marginLeft:8}}>OVERDUE</span>}
+              <div style={{fontSize:14,fontWeight:700,marginTop:4}}>{det.user}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{det.email||"\u2014"}</div>
+              <div style={{marginTop:6}}><OffChip s={det.status} loop={det.recoveryLoop} isOverdue={det.isOverdue}/></div>
+            </div>
+            <button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button>
+          </div>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:6}}>WORKFLOW PROGRESS {det.recoveryLoop===2?"(LOOP 2)":"(LOOP 1)"}</div>
+          <div style={{display:"flex",alignItems:"center",gap:2}}>
+            {stages.map((s,i)=>{
+              const st=OFF_STAT[s];if(!st)return null;
+              const curIdx=stages.indexOf(det.status);const done=i<=curIdx;const isCur=i===curIdx;
+              return (<div key={s} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <div style={{width:"100%",height:4,borderRadius:2,background:done?(isCur?st.c:C.green):C.borderLight,opacity:done?1:0.3}}/>
+                <span style={{fontSize:7,color:done?st.c:C.muted,fontFamily:MN,textAlign:"center",whiteSpace:"nowrap"}}>{st.l.split(" ").slice(-1)[0]}</span>
+              </div>);
+            })}
+          </div>
+        </div>
+        {(()=>{
+          const actions=availableActions(det);
+          return actions.length>0&&(
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:6}}>ACTIONS</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {actions.map(a=>{
+                const needsInput=a.key==="record_email"||a.key==="record_address";
+                return (<button key={a.key} onClick={()=>{if(needsInput){setInputMode(a.key==="record_email"?"email":"address");setInputVal({line1:"",city:"",state:"",postalCode:"",email:""});}else dispatch(det.id,a.key);}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${a.bd}`,background:a.bg,color:a.color,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{a.label}</button>);
+              })}
+            </div>
+            {inputMode==="email"&&<div style={{marginTop:8,display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
+              <input value={inputVal.email} onChange={e=>setInputVal(v=>({...v,email:e.target.value}))} placeholder="employee@company.com" style={{flex:1,padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,fontFamily:SN,minWidth:180}}/>
+              <button onClick={()=>{if(!inputVal.email.trim()){setToast("Email required");return;}dispatch(det.id,"record_email",{email:inputVal.email});}} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Save</button>
+              <button onClick={()=>setInputMode(null)} style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:10.5,cursor:"pointer"}}>Cancel</button>
+            </div>}
+            {inputMode==="address"&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+              <input value={inputVal.line1} onChange={e=>setInputVal(v=>({...v,line1:e.target.value}))} placeholder="Street address" style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,fontFamily:SN}}/>
+              <div style={{display:"flex",gap:4}}>
+                <input value={inputVal.city} onChange={e=>setInputVal(v=>({...v,city:e.target.value}))} placeholder="City" style={{flex:2,padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,fontFamily:SN}}/>
+                <input value={inputVal.state} onChange={e=>setInputVal(v=>({...v,state:e.target.value}))} placeholder="ST" style={{flex:1,padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,fontFamily:SN,maxWidth:50}}/>
+                <input value={inputVal.postalCode} onChange={e=>setInputVal(v=>({...v,postalCode:e.target.value}))} placeholder="ZIP" style={{flex:1,padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,fontFamily:SN,maxWidth:70}}/>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                <button onClick={()=>{if(!inputVal.line1||!inputVal.city||!inputVal.state){setToast("Street, city, and state required");return;}dispatch(det.id,"record_address",inputVal);}} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Save Address</button>
+                <button onClick={()=>setInputMode(null)} style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:10.5,cursor:"pointer"}}>Cancel</button>
+              </div>
+            </div>}
+          </div>);
+        })()}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:6}}>RECORD DETAILS</div>
+          {[["Employee",det.user],["Email",det.email||"\u2014"],["Manager",det.managerName||"\u2014"],["Serial Number",det.sn],["Asset Tag",det.assetTag||"\u2014"],["Location",det.loc],["Operating Company",det.opco],["Last Working Day",det.lastWorkingDay||"\u2014"],["Task ID",det.taskId||"\u2014"],["Recovery Loop",String(det.recoveryLoop||1)],["Overdue",det.isOverdue?"Yes":"No"],["Email Confirmed",det.userEmailConfirmed?"Yes":"No"],["Address Confirmed",det.userAddressConfirmed?"Yes":"No"],["Investigation",det.investigationStatus||"\u2014"],["Return Tracking",getTracking(det)||"\u2014"],["Return Address",getShipAddress(det)||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Serial Number","Task ID","Return Tracking","Last Working Day","Asset Tag"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="Overdue"&&v==="Yes"?C.orange:l==="Recovery Loop"&&v==="2"?C.red:C.text,maxWidth:200,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:6}}>WORKFLOW TIMESTAMPS</div>
+          {[["Initial Email / Label",det.initialEmailDate],["Follow-Up 1",det.followup1Date],["Follow-Up 2",det.followup2Date],["Needs Review",det.needsReviewDate],["Investigation",det.investigationDate],["Address Received",det.addressReceivedDate],["Secondary Label",det.secondaryLabelCreatedDate],["Secondary FU 1",det.secondaryFollowup1Date],["Secondary FU 2",det.secondaryFollowup2Date],["Escalated",det.escalationDate],["Resolved",det.resolvedDate]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontFamily:MN,fontSize:11,color:v?C.text:C.light}}>{v||"\u2014"}</span></div>))}
+        </div>
+        {det.notes&&(<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:det.recoveryLoop===2?C.red:C.sub,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>)}
+        {det.history&&det.history.length>0&&(<div style={{padding:"10px 18px"}}><div style={{fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:8}}>HISTORY ({det.history.length} events)</div><div style={{position:"relative",paddingLeft:14}}><div style={{position:"absolute",left:4,top:5,bottom:5,width:1.5,background:C.borderLight}}/>{[...det.history].reverse().map((h,i)=>{const sx=OFF_STAT[h.type];const isLast=i===0;const isL2event=h.detail&&h.detail.includes("[Loop 2]");return (<div key={i} style={{position:"relative",marginBottom:10}}><div style={{position:"absolute",left:-11,top:4,width:7,height:7,borderRadius:"50%",background:isLast?(sx?.c||C.accent):C.border,border:`1.5px solid ${isLast?(sx?.c||C.accent):C.borderHeavy}`}}/><div style={{fontSize:9.5,color:C.chartAxis,fontFamily:MN}}>{h.ts}{isL2event&&<span style={{marginLeft:4,fontSize:8,padding:"1px 4px",borderRadius:3,background:C.red,color:"#FFF",fontWeight:700}}>L2</span>}</div><div style={{fontSize:11.5,fontWeight:500,color:isL2event?C.red:C.text,marginTop:1}}>{h.detail}</div><div style={{fontSize:10,color:C.muted,marginTop:1}}>by {h.by}</div></div>);})}</div></div>)}
+      </div>)}
+    </div>
+  </>);
+}
+
+const BfChip=({s})=>{const x=BF_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+function BreakFixModule({setToast,go,onOpenAsset}){
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+  const [q,setQ]=useState("");
+  const stCounts=useMemo(()=>{const c={};BREAKFIX.forEach(b=>{c[b.status]=(c[b.status]||0)+1;});return c;},[]);
+  const filt=useMemo(()=>{let l=BREAKFIX;if(stF!=="all")l=l.filter(b=>b.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(b=>b.asset.toLowerCase().includes(s)||b.user.toLowerCase().includes(s)||b.issue.toLowerCase().includes(s)||b.msCase.toLowerCase().includes(s)||b.model.toLowerCase().includes(s));}return l;},[stF,q]);
+  const det=sel?BREAKFIX.find(b=>b.id===sel):null;
+  const open=BREAKFIX.filter(b=>!["closed","replacement_issued"].includes(b.status)).length;
+  const stageIdx=(s)=>BF_STAGES.indexOf(s);
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Tickets" value={BREAKFIX.length} sub="All time" color={C.accent}/>
+      <Kpi label="Open" value={open} color={C.amber}/>
+      <Kpi label="In Repair" value={stCounts.repair_in_progress||0} color={C.orange}/>
+      <Kpi label="Vendor Review" value={stCounts.vendor_review||0} color={C.amber}/>
+      <Kpi label="Closed" value={(stCounts.closed||0)+(stCounts.replacement_issued||0)} color={C.green}/>
+      <Kpi label="Replacements" value={stCounts.replacement_issued||0} sub="Devices replaced" color={C.red}/>
+    </div>
+    {/* Stage pipeline */}
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginBottom:14,boxShadow:C.shadow}}>
+      <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>REPAIR PIPELINE</div>
+      <div style={{display:"flex",gap:4}}>{BF_STAGES.map((s,i)=>{const cnt=stCounts[s]||0;const x=BF_STAT[s];return (<div key={s} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:6,background:cnt>0?x.bg:C.surfaceAlt,border:`1px solid ${cnt>0?x.bd+"40":C.borderLight}`,position:"relative"}}>
+        <div style={{fontSize:16,fontWeight:700,color:cnt>0?x.c:C.light,fontFamily:SN}}>{cnt}</div>
+        <div style={{fontSize:8.5,color:cnt>0?x.c:C.muted,fontFamily:MN,marginTop:2}}>{x.l}</div>
+        {i<BF_STAGES.length-1&&<div style={{position:"absolute",right:-8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.light}}>{"\u2192"}</div>}
+      </div>);})}
+      {(stCounts.replacement_issued||0)>0&&<div style={{flex:"0 0 auto",textAlign:"center",padding:"8px 12px",borderRadius:6,background:C.accentSoft,border:`1px solid ${C.accentBorder}40`}}><div style={{fontSize:16,fontWeight:700,color:C.accent}}>{stCounts.replacement_issued}</div><div style={{fontSize:8.5,color:C.accent,fontFamily:MN,marginTop:2}}>Replaced</div></div>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset, user, issue, MS case\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      {[["all","All",BREAKFIX.length],...Object.entries(BF_STAT).map(([k,v])=>[k,v.l,stCounts[k]||0])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+    </div>
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 400px)"}}>
+        <table style={{width:"100%",minWidth:1050}}><thead><tr>{["Ticket","Asset Tag","Model","User","Issue","Status","MS Case","Technician","Submitted","Last Update"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No break-fix tickets match.</td></tr>}
+            {filt.map((b,i)=>(<tr key={b.id} onClick={()=>setSel(sel===b.id?null:b.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{b.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{b.asset}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,fontWeight:500}}>{b.model}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5}}>{b.user}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:10.5,color:C.sub,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={b.issue}>{b.issue}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><BfChip s={b.status}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:b.msCase?C.cyan:C.light}}>{b.msCase||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub}}>{b.tech}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{b.submitted}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===b.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{b.lastUpdate}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:390,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 400px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user}</div><div style={{marginTop:5}}><BfChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+        {/* Stage progress bar */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>REPAIR PROGRESS</div>
+          <div style={{display:"flex",alignItems:"center",gap:2}}>{BF_STAGES.map((s,i)=>{const cur=stageIdx(det.status);const done=i<=cur;const isCurrent=i===cur;const x=BF_STAT[s];return (<div key={s} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><div style={{width:"100%",height:4,borderRadius:2,background:done?x.c:C.borderLight,opacity:isCurrent?1:done?0.6:0.3}}/><span style={{fontSize:7,color:done?x.c:C.muted,fontFamily:MN,textAlign:"center"}}>{x.l.split(" ").slice(-1)[0]}</span></div>);})}</div>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+          {det.status==="ticket_submitted"&&<button onClick={()=>setToast(`MS case created for ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Create MS Case</button>}
+          {!["closed","replacement_issued"].includes(det.status)&&<><button onClick={()=>setToast(`${det.id} advanced`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Advance Stage</button><button onClick={()=>setToast(`Replacement issued for ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Issue Replacement</button></>}
+          <button onClick={()=>{if(onOpenAsset&&det.asset)onOpenAsset(det.asset);else if(go){go("registry");setToast(`Opening asset ${det.asset}`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>View Asset</button>
+        </div>
+        <div style={{padding:"10px 18px"}}>{[["Ticket ID",det.id],["Asset Tag",det.asset],["Serial Number",det.sn],["Model",det.model],["Manufacturer",det.mfr],["Assigned User",det.user],["Technician",det.tech],["Issue",det.issue],["MS Case #",det.msCase||"\u2014"],["Submitted",det.submitted],["Last Update",det.lastUpdate],["Replacement SN",det.replacementSn||"\u2014"],["Process Type",det.process_type]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`,gap:8}}><span style={{fontSize:11,color:C.muted,flexShrink:0}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Asset Tag","Serial Number","MS Case #","Submitted","Last Update","Ticket ID","Replacement SN"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="MS Case #"?C.cyan:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:l==="Issue"?"normal":"nowrap",maxWidth:l==="Issue"?200:180}}>{v}</span></div>))}</div>
+        {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>}
+      </div>)}
+    </div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RETURN QUEUE MODULE (multi-process) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const RtnChip=({s})=>{const x=RTN_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+const RsnChip=({r})=>{const x=RTN_REASON[r];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}>{x.l}</span>):null;};
+function ReturnQueueModule({setToast,go,onOpenAsset}){
+  const [sel,setSel]=useState(null);
+  const [rsnF,setRsnF]=useState("all");
+  const [stF,setStF]=useState("all");
+  const [q,setQ]=useState("");
+  const rsnCounts=useMemo(()=>{const c={};RETURNS.forEach(r=>{c[r.reason]=(c[r.reason]||0)+1;});return c;},[]);
+  const stCounts=useMemo(()=>{const c={};RETURNS.forEach(r=>{c[r.status]=(c[r.status]||0)+1;});return c;},[]);
+  const filt=useMemo(()=>{let l=RETURNS;if(rsnF!=="all")l=l.filter(r=>r.reason===rsnF);if(stF!=="all")l=l.filter(r=>r.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(r=>r.asset.toLowerCase().includes(s)||r.user.toLowerCase().includes(s)||r.sn.toLowerCase().includes(s));}return l;},[rsnF,stF,q]);
+  const det=sel?RETURNS.find(r=>r.id===sel):null;
+  const overdue=RETURNS.filter(r=>r.status==="overdue").length;
+  // Group by reason for summary
+  const grouped=useMemo(()=>Object.entries(RTN_REASON).map(([k,v])=>({key:k,...v,items:RETURNS.filter(r=>r.reason===k)})),[]);
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Returns" value={RETURNS.length} sub="Active queue" color={C.accent}/>
+      <Kpi label="Overdue" value={overdue} color={C.red} alert={overdue>0}/>
+      <Kpi label="In Transit" value={stCounts.in_transit||0} color={C.orange}/>
+      <Kpi label="Received" value={stCounts.received||0} color={C.green}/>
+      <Kpi label="Staged for LFS" value={stCounts.staged_for_lfs||0} color={C.purple}/>
+      <Kpi label="Closed" value={stCounts.closed||0} color={C.green}/>
+    </div>
+    {/* Reason grouping summary */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+      {grouped.map(g=>(<div key={g.key} onClick={()=>{setRsnF(rsnF===g.key?"all":g.key);setSel(null);}} style={{background:rsnF===g.key?g.bg:C.surface,border:`1px solid ${rsnF===g.key?g.bd:C.border}`,borderLeft:`3px solid ${g.c}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",boxShadow:C.shadow}}>
+        <div style={{fontSize:10,fontWeight:700,color:g.c,fontFamily:MN,letterSpacing:"0.04em"}}>{g.l}</div>
+        <div style={{fontSize:22,fontWeight:700,color:g.c,marginTop:4}}>{g.items.length}</div>
+        <div style={{fontSize:9,color:C.muted,marginTop:2}}>{g.items.filter(r=>!["closed","shipped_to_vendor"].includes(r.status)).length} active</div>
+      </div>))}
+    </div>
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 200px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset, user\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      {[["all","All",RETURNS.length],...Object.entries(RTN_STAT).map(([k,v])=>[k,v.l,stCounts[k]||0])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+    </div>
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 400px)"}}>
+        <table style={{width:"100%",minWidth:950}}><thead><tr>{["ID","Asset","Serial","User","Return Reason","Process","Status","Date","Tracking","Ref"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No returns match.</td></tr>}
+            {filt.map((r,i)=>(<tr key={r.id} onClick={()=>setSel(sel===r.id?null:r.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.asset}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.muted}}>{r.sn}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5}}>{r.user}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><RsnChip r={r.reason}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:10.5,color:C.sub,fontFamily:MN}}>{r.process_type}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><RtnChip s={r.status}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.date}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:getTracking(r)?C.accent:C.light}}>{getTracking(r)||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.cyan}}>{r.ref||"\u2014"}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:370,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 400px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user}</div><div style={{marginTop:5,display:"flex",gap:5}}><RsnChip r={det.reason}/><RtnChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+          {det.status==="label_sent"&&<button onClick={()=>setToast(`Reminder sent for ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Send Reminder</button>}
+          {det.status==="overdue"&&<button onClick={()=>setToast(`Escalated ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Escalate</button>}
+          {["received","inspecting"].includes(det.status)&&<button onClick={()=>setToast(`${det.id} staged for LFS`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Stage for LFS</button>}
+          <button onClick={()=>{if(onOpenAsset&&det.asset)onOpenAsset(det.asset);else if(go){go("registry");setToast(`Opening ${det.asset}`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>View Asset</button>
+        </div>
+        <div style={{padding:"10px 18px"}}>{[["Return ID",det.id],["Asset Tag",det.asset],["Serial",det.sn],["Model",det.model],["User",det.user],["Return Reason",RTN_REASON[det.reason]?.l||det.reason],["Process Type",det.process_type],["Status",RTN_STAT[det.status]?.l||det.status],["Technician",det.tech||"\u2014"],["Date",det.date],["Tracking",getTracking(det)||"\u2014"],["Ship Address",getShipAddress(det)||"\u2014"],["Reference",det.ref||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Return ID","Asset Tag","Serial","Date","Tracking","Reference"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="Reference"?C.cyan:C.text,maxWidth:180,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
+        {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>}
+      </div>)}
+    </div>
+  </>);
+}
+
+
+const RfChip=({s})=>{const x=RF_S[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.s}</span>):null;};
+const BkChip=({s})=>{const x=BK_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+const Kpi=({label,value,sub,color,alert,onClick})=>(<div onClick={onClick} style={{background:C.surface,borderRadius:"var(--card-radius)",padding:"var(--card-padding)",border:`1px solid ${C.border}`,boxShadow:`${C.shadowMd}, inset 0 1px 0 ${C.innerHighlight}`,flex:"1 1 0",minWidth:120,position:"relative",overflow:"hidden",cursor:onClick?"pointer":"default"}}>{alert&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:C.red}}/>}<div style={{fontSize:9.5,fontWeight:600,letterSpacing:"0.12em",textTransform:"uppercase",color:C.muted,marginBottom:6,fontFamily:MN}}>{label}</div><div style={{fontSize:36,fontWeight:800,color:color||C.text,lineHeight:1.05,fontFamily:SN}}>{value}</div>{sub&&<div style={{fontSize:10.5,color:C.sub,marginTop:6}}>{sub}</div>}</div>);
+const SH=({children,badge,color=C.text})=>(<div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10,marginTop:18}}><div style={{width:3,height:12,borderRadius:1,background:color}}/><h3 style={{fontSize:12.5,fontWeight:700,margin:0,color:C.text,fontFamily:SN}}>{children}</h3>{badge&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:8,background:color+"10",color,fontWeight:600,fontFamily:MN}}>{badge}</span>}</div>);
+const Toast=({msg,onClose})=>{useEffect(()=>{const t=setTimeout(onClose,3000);return ()=>clearTimeout(t);},[onClose]);return (<div style={{position:"fixed",bottom:20,right:20,zIndex:999,background:C.text,color:"#FFF",padding:"10px 18px",borderRadius:8,fontSize:12,fontWeight:500,boxShadow:C.shadowMd,display:"flex",alignItems:"center",gap:10,fontFamily:SN}}><span style={{width:6,height:6,borderRadius:"50%",background:C.green}}/>{msg}<button onClick={onClose} style={{background:"none",border:"none",color:C.light,cursor:"pointer",fontSize:14,padding:0,marginLeft:4}}>{"\u00D7"}</button></div>);};
+// Form field helper
+const FF=({label,children,w})=>(<div style={{flex:w?`0 0 ${w}`:"1 1 200px"}}><div style={{fontSize:10,fontWeight:600,color:C.muted,marginBottom:4,fontFamily:MN,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</div>{children}</div>);
+const inp={width:"100%",padding:"7px 10px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:12,color:C.text,outline:"none",background:C.surface,fontFamily:SN};
+const parseAssetAgeMonths=(age)=>{if(!age||age==="—")return 0;const y=(age.match(/(\d+)\s*yr/)||[])[1];const mo=(age.match(/(\d+)\s*mo/)||[])[1];if(y||mo)return (Number(y)||0)*12+(Number(mo)||0);const num=Number.parseFloat(age);return Number.isFinite(num)?Math.round(num*12):0;};
+const toLocalISODate=(d=new Date())=>{const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10);};
+const currentYear=()=>toLocalISODate().slice(0,4);
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ INVENTORY + BOOKINGS VIEW Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+function InventoryModule({setToast,currentNav}){
+  const [tab,setTab]=useState(currentNav==="inventory.bookings"?"bookings":"stock"); // stock | bookings | newBooking
+  // Sync internal tab when sidebar nav changes
+  useEffect(()=>{
+    if(currentNav==="inventory.bookings"&&tab!=="bookings"&&tab!=="newBooking")setTab("bookings");
+    if(currentNav==="inventory.stock"&&tab!=="stock")setTab("stock");
+  },[currentNav]);
+  const [sel,setSel]=useState(null);
+  const [search,setSearch]=useState("");
+  const [typeF,setTypeF]=useState("all");
+  const [sortCol,setSortCol]=useState(null);
+  const [sortDir,setSortDir]=useState("asc");
+  const [showLow,setShowLow]=useState(false);
+  const [invItems,setInvItems]=useState(INV);
+  // Booking state
+  const [bookings,setBookings]=useState(SEED_BK);
+  const [bkSel,setBkSel]=useState(null);
+  const [bkFilter,setBkFilter]=useState("all");
+  // New booking form
+  const [form,setForm]=useState({user:"",loc:"Charlotte, NC (PTC)",type:"Refresh",ref:"",by:"",needed:"",notes:"",items:[{sku:"",name:"",qty:1}]});
+
+  const lowItems=useMemo(()=>invItems.filter(i=>i.q>0&&i.q<5),[invItems]);
+  const totalU=useMemo(()=>invItems.reduce((a,i)=>a+i.q,0),[invItems]);
+  const invBySku=useMemo(()=>Object.fromEntries(invItems.map(i=>[i.s,i])),[invItems]);
+
+  // Stock table filtering
+  const filtered=useMemo(()=>{
+    let list=showLow?lowItems:[...invItems];
+    if(typeF!=="all")list=list.filter(i=>i.t===typeF);
+    if(search.trim()){const q=search.toLowerCase();list=list.filter(i=>i.s.toLowerCase().includes(q)||i.n.toLowerCase().includes(q)||i.c.toLowerCase().includes(q)||i.t.toLowerCase().includes(q));}
+    if(sortCol){list=[...list].sort((a,b)=>{const va=a[sortCol]??"";const vb=b[sortCol]??"";if(typeof va==="number"&&typeof vb==="number")return sortDir==="asc"?va-vb:vb-va;return sortDir==="asc"?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));});}
+    return list;
+  },[search,typeF,sortCol,sortDir,showLow,lowItems]);
+
+  const hSort=(k)=>{if(sortCol===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortCol(k);setSortDir("asc");}};
+  const det=sel?invItems.find(i=>i.s===sel):null;
+  const bkDet=bkSel?bookings.find(b=>b.id===bkSel):null;
+
+  // Booking KPIs
+  const bkCounts=useMemo(()=>{const c={};bookings.forEach(b=>{c[b.status]=(c[b.status]||0)+1;});return c;},[bookings]);
+  const pendingCount=(bkCounts.submitted||0)+(bkCounts.pending_approval||0);
+  const bkFiltered=useMemo(()=>{if(bkFilter==="all")return bookings;if(bkFilter==="pending")return bookings.filter(b=>["submitted","pending_approval"].includes(b.status));return bookings.filter(b=>b.status===bkFilter);},[bookings,bkFilter]);
+  const groupItemsBySku=(items)=>items.reduce((acc,it)=>{if(!it?.sku)return acc;const qty=Math.max(0,Number(it.qty)||0);if(!qty)return acc;acc[it.sku]=(acc[it.sku]||0)+qty;return acc;},{});
+  const hasInventoryForItems=(items)=>{const req=groupItemsBySku(items);return Object.entries(req).every(([sku,qty])=>(invBySku[sku]?.q||0)>=qty);};
+  const applyInventoryDelta=(items,sign)=>{const deltas=groupItemsBySku(items);setInvItems(prev=>prev.map(it=>{const qty=deltas[it.s]||0;if(!qty)return it;const nextQ=Math.max(0,it.q+(sign*qty));return {...it,q:nextQ};}));};
+
+  // Booking actions
+  const bkAct=(action,bk)=>{
+    const now=toLocalISODate();
+    if(action==="Fulfill"&&!bk.reserved&&!hasInventoryForItems(bk.items)){setToast(`Cannot fulfill ${bk.id}: insufficient stock.`);return;}
+    setBookings(prev=>prev.map(b=>{
+      if(b.id!==bk.id)return b;
+      const newH=[...b.history,{date:now,event:action,by:"Current User"}];
+      if(action==="Approve")return {...b,status:"approved",actionBy:"Current User",actionDate:now,history:newH};
+      if(action==="Reject")return {...b,status:"rejected",actionBy:"Current User",actionDate:now,history:newH};
+      if(action==="Fulfill")return {...b,status:"fulfilled",actionBy:"Warehouse Tech",actionDate:now,history:newH,reserved:true};
+      if(action==="Cancel")return {...b,status:"cancelled",actionBy:"Current User",actionDate:now,history:newH};
+      return b;
+    }));
+    if(action==="Fulfill"&&!bk.reserved)applyInventoryDelta(bk.items,-1);
+    if(["Reject","Cancel"].includes(action)&&bk.reserved&&!["fulfilled","cancelled","rejected"].includes(bk.status))applyInventoryDelta(bk.items,1);
+    setToast(`${action}: ${bk.id}`);
+  };
+
+  // Submit new booking
+  const submitBooking=()=>{
+    const validItems=form.items.filter(i=>i.sku&&i.qty>0);
+    if(!form.user||!form.ref||validItems.length===0){setToast("Please fill in all required fields and add at least one item.");return;}
+    if(!hasInventoryForItems(validItems)){setToast("Insufficient available quantity for one or more selected items.");return;}
+    const today=toLocalISODate();
+    const year=currentYear();
+    const nextNumber=bookings.filter(b=>b.id.startsWith(`BK-${year}-`)).length+1;
+    const newBk={id:`BK-${year}-${String(nextNumber).padStart(4,"0")}`,user:form.user,loc:form.loc,type:form.type,ref:form.ref,by:form.by||"Current User",date:today,needed:form.needed,status:"submitted",actionBy:null,actionDate:null,notes:form.notes,items:validItems,reserved:true,history:[{date:today,event:"Request created",by:form.by||"Current User"},{date:today,event:"Submitted for approval",by:form.by||"Current User"}]};
+    applyInventoryDelta(validItems,-1);
+    setBookings(prev=>[newBk,...prev]);
+    setForm({user:"",loc:"Charlotte, NC (PTC)",type:"Refresh",ref:"",by:"",needed:"",notes:"",items:[{sku:"",name:"",qty:1}]});
+    setTab("bookings");
+    setBkSel(newBk.id);
+    setToast(`Booking ${newBk.id} submitted`);
+  };
+
+  // Form item helpers
+  const addItem=()=>{const selectable=invItems.filter(i=>i.q>0).length;if(form.items.length>=selectable){setToast("All available SKUs are already selected.");return;}setForm(f=>({...f,items:[...f.items,{sku:"",name:"",qty:1}]}));};
+  const rmItem=(idx)=>setForm(f=>({...f,items:f.items.filter((_,i)=>i!==idx)}));
+  const updItem=(idx,field,val)=>setForm(f=>({...f,items:f.items.map((it,i)=>{if(i!==idx)return it;if(field==="sku"){const found=invItems.find(x=>x.s===val);return {...it,sku:val,name:found?found.n:""};}return {...it,[field]:field==="qty"?Math.max(1,parseInt(val)||1):val};})}));
+
+  const tabBtn=(id,label,count)=>(<button onClick={()=>{setTab(id);setSel(null);setBkSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${tab===id?C.accent:C.border}`,background:tab===id?C.accentSoft:C.surface,color:tab===id?C.accent:C.sub,fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>{label}{count!==undefined&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:tab===id?C.accent+"18":C.graySoft,color:tab===id?C.accent:C.muted,fontFamily:MN}}>{count}</span>}</button>);
+
+  return (<>
+    {/* Tab bar */}
+    <div style={{display:"flex",gap:6,marginBottom:16}}>
+      {tabBtn("stock","Stock Overview",invItems.length)}
+      {tabBtn("bookings","Booking Requests",bookings.length)}
+      <button onClick={()=>{setTab("newBooking");setSel(null);setBkSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:"none",background:tab==="newBooking"?C.accent:C.green,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ New Booking</button>
+    </div>
+
+    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â STOCK TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {tab==="stock"&&(<>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Total SKUs" value={invItems.length} color={C.accent}/>
+        <Kpi label="Total Units" value={totalU.toLocaleString()}/>
+        <Kpi label="Laptops" value={invItems.filter(i=>i.t==="Laptop").reduce((a,i)=>a+i.q,0).toLocaleString()} sub={`${invItems.filter(i=>i.t==="Laptop").length} SKUs`} color={C.green}/>
+        <Kpi label="Docks" value={invItems.filter(i=>i.t==="Dock").reduce((a,i)=>a+i.q,0)} color={C.purple}/>
+        <Kpi label="Monitors" value={invItems.filter(i=>i.t==="Monitor").reduce((a,i)=>a+i.q,0)} color={C.cyan}/>
+        <Kpi label="Low Stock" value={lowItems.length} sub="Qty < 5" color={C.red} alert={lowItems.length>0} onClick={()=>setShowLow(!showLow)}/>
+      </div>
+      {/* Low stock alerts */}
+      {lowItems.length>0&&!showLow&&(<div style={{background:C.redSoft,border:`1px solid ${C.redBorder}`,borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:11,fontWeight:700,color:C.red}}>Low Stock Alerts ({lowItems.length})</span><button onClick={()=>setShowLow(true)} style={{fontSize:10,color:C.red,background:"none",border:"none",cursor:"pointer",fontWeight:600,textDecoration:"underline"}}>Show all</button></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{lowItems.slice(0,6).map(i=>(<span key={i.s} onClick={()=>setSel(i.s)} style={{fontSize:10.5,padding:"3px 8px",borderRadius:4,background:C.surface,border:`1px solid ${C.redBorder}40`,cursor:"pointer",color:C.text}}><strong style={{color:C.red}}>{i.q}</strong> {i.n}</span>))}{lowItems.length>6&&<span style={{fontSize:10,color:C.red,padding:"3px 0"}}>+{lowItems.length-6} more</span>}</div>
+      </div>)}
+      {/* Filters */}
+      <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search SKU, product\u2026" style={{...inp,paddingLeft:26}}/></div>
+        <div style={{width:1,height:20,background:C.border}}/>
+        {["all","Laptop","Dock","Monitor","Headphones","Cable","Camera"].map(tp=>{const cnt=tp==="all"?invItems.length:invItems.filter(i=>i.t===tp).length;return cnt>0?(<button key={tp} onClick={()=>{setTypeF(tp);setShowLow(false);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF===tp?C.accent:C.border}`,background:typeF===tp?C.accentSoft:C.surface,color:typeF===tp?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{tp==="all"?"All":tp} ({cnt})</button>):null;})}
+      </div>
+      {/* Table + drawer */}
+      <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+        <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 360px)"}}>
+          <table style={{width:"100%",minWidth:800}}>
+            <thead><tr>{[{k:"s",l:"SKU",w:120},{k:"n",l:"Product Name",w:200},{k:"c",l:"Category",w:90},{k:"t",l:"Type",w:100},{k:"q",l:"Qty",w:70},{k:"r",l:"Reorder",w:70},{k:"l",l:"Location",w:150}].map(h=>(<th key={h.k} onClick={()=>hSort(h.k)} style={{position:"sticky",top:0,zIndex:5,padding:"7px 9px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9.5,fontWeight:700,color:sortCol===h.k?C.accent:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",userSelect:"none",width:h.w}}>{h.l}{sortCol===h.k&&<span style={{marginLeft:3,fontSize:8}}>{sortDir==="asc"?"\u25B2":"\u25BC"}</span>}</th>))}</tr></thead>
+            <tbody>{filtered.length===0&&<tr><td colSpan={7} style={{padding:28,textAlign:"center",color:C.muted}}>No items match.</td></tr>}
+              {filtered.map((it,ri)=>{const lo=it.q>0&&it.q<5;const zr=it.q===0;return (<tr key={it.s} onClick={()=>setSel(sel===it.s?null:it.s)} style={{cursor:"pointer"}}><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,borderLeft:lo?`3px solid ${C.red}`:zr?`3px solid ${C.muted}`:"3px solid transparent"}}><span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600}}>{it.s}</span></td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{it.n}</td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{it.c}</td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:it.t==="Laptop"?C.greenSoft:it.t==="Dock"?C.purpleSoft:it.t==="Monitor"?C.cyanSoft:C.graySoft,color:it.t==="Laptop"?C.green:it.t==="Dock"?C.purple:it.t==="Monitor"?C.cyan:C.gray,fontWeight:600,fontFamily:MN}}>{it.t}</span></td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:12,fontWeight:700,color:zr?C.muted:lo?C.red:C.text}}>{it.q}</td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,color:C.muted}}>{it.r}</td><td style={{padding:"6px 9px",borderBottom:`1px solid ${C.borderLight}`,background:sel===it.s?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub}}>{it.l||"\u2014"}</td></tr>);})}</tbody>
+          </table>
+        </div>
+        {det&&(<div style={{width:340,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 360px)"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.s}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.n}</div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}><button onClick={e=>{e.stopPropagation();setTab("newBooking");setForm(f=>({...f,items:[{sku:det.s,name:det.n,qty:1}]}));}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Reserve for Refresh</button>{det.q<det.r&&<button onClick={e=>{e.stopPropagation();setToast(`Reorder for ${det.n}`);}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Reorder</button>}</div>
+          <div style={{padding:"10px 18px"}}>{[["SKU",det.s],["Product",det.n],["Category",det.c],["Type",det.t],["Qty",String(det.q)],["Reorder Qty",String(det.r)],["Status",det.q===0?"Out of Stock":det.q<5?"Low Stock":"In Stock"],["Barcode",det.b||"\u2014"],["Location",det.l||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5,color:C.muted}}>{l}</span><span style={{fontSize:11.5,color:l==="Status"?(v==="Low Stock"?C.red:v==="Out of Stock"?C.muted:C.green):v==="\u2014"?C.light:C.text,fontWeight:500,fontFamily:["SKU","Qty","Reorder Qty","Barcode"].includes(l)?MN:SN}}>{v}</span></div>))}</div>
+        </div>)}
+      </div>
+    </>)}
+
+    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â BOOKINGS TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {tab==="bookings"&&(<>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Total Bookings" value={bookings.length} color={C.accent}/>
+        <Kpi label="Pending" value={pendingCount} color={C.amber} onClick={()=>setBkFilter("pending")}/>
+        <Kpi label="Approved" value={bkCounts.approved||0} color={C.green}/>
+        <Kpi label="Fulfilled" value={bkCounts.fulfilled||0} color={C.purple}/>
+        <Kpi label="Rejected" value={bkCounts.rejected||0} color={C.red}/>
+        <Kpi label="Draft" value={bkCounts.draft||0} color={C.gray}/>
+      </div>
+      {/* Filter chips */}
+      <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
+        {[["all","All",bookings.length],["pending","Pending",pendingCount],["submitted","Submitted",bkCounts.submitted||0],["pending_approval","Pending Approval",bkCounts.pending_approval||0],["approved","Approved",bkCounts.approved||0],["fulfilled","Fulfilled",bkCounts.fulfilled||0],["rejected","Rejected",bkCounts.rejected||0],["draft","Draft",bkCounts.draft||0]].map(([k,l,n])=>(<button key={k} onClick={()=>{setBkFilter(k);setBkSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${bkFilter===k?C.accent:C.border}`,background:bkFilter===k?C.accentSoft:C.surface,color:bkFilter===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+      </div>
+      {/* Table + drawer */}
+      <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+        <div style={{flex:1,background:C.surface,borderRadius:bkDet?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 340px)"}}>
+          <table style={{width:"100%",minWidth:950}}>
+            <thead><tr>{["Booking ID","User","Location","Type","Reference","Requested By","Date","Needed By","Status","Action By","Action Date"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+            <tbody>{bkFiltered.length===0&&<tr><td colSpan={11} style={{padding:28,textAlign:"center",color:C.muted}}>No bookings match filter.</td></tr>}
+              {bkFiltered.map((bk,ri)=>(<tr key={bk.id} onClick={()=>setBkSel(bkSel===bk.id?null:bk.id)} style={{cursor:"pointer"}}>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{bk.id}</span></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{bk.user}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub}}>{bk.loc}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:bk.type==="Refresh"?C.cyanSoft:C.orangeSoft,color:bk.type==="Refresh"?C.cyan:C.orange,fontWeight:600,fontFamily:MN}}>{bk.type}</span></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:bk.ref.startsWith("RC")?C.accent:C.orange,fontWeight:500}}>{bk.ref}</span></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{bk.by}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{bk.date}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{bk.needed||"\u2014"}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><BkChip s={bk.status}/></td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:bk.actionBy?C.sub:C.light}}>{bk.actionBy||"\u2014"}</td>
+                <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:bkSel===bk.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:bk.actionDate?C.sub:C.light}}>{bk.actionDate||"\u2014"}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+        {/* Booking detail drawer */}
+        {bkDet&&(<div style={{width:380,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{bkDet.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{bkDet.user}</div><div style={{marginTop:5}}><BkChip s={bkDet.status}/></div></div><button onClick={()=>setBkSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div>
+          </div>
+          {/* Quick actions */}
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+            {["submitted","pending_approval"].includes(bkDet.status)&&<><button onClick={()=>bkAct("Approve",bkDet)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Approve</button><button onClick={()=>bkAct("Reject",bkDet)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Reject</button></>}
+            {bkDet.status==="approved"&&<button onClick={()=>bkAct("Fulfill",bkDet)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Fulfill</button>}
+            {!["fulfilled","cancelled","rejected"].includes(bkDet.status)&&<button onClick={()=>bkAct("Cancel",bkDet)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.grayBorder}`,background:C.graySoft,color:C.gray,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Cancel</button>}
+          </div>
+          {/* Header fields */}
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            {[["User",bkDet.user],["Location",bkDet.loc],["Type",bkDet.type],["Reference",bkDet.ref],["Requested By",bkDet.by],["Request Date",bkDet.date],["Needed By",bkDet.needed||"\u2014"],["Action By",bkDet.actionBy||"\u2014"],["Action Date",bkDet.actionDate||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,color:v==="\u2014"?C.light:C.text,fontWeight:500,fontFamily:["Reference","Request Date","Needed By","Action Date"].includes(l)?MN:SN}}>{v}</span></div>))}
+          </div>
+          {/* Requested items */}
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>REQUESTED ITEMS ({bkDet.items.length})</div>
+            {bkDet.items.map((it,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<bkDet.items.length-1?`1px solid ${C.borderLight}`:"none"}}>
+              <div><div style={{fontSize:12,fontWeight:500}}>{it.name}</div><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN}}>{it.sku}</div></div>
+              <span style={{fontSize:14,fontWeight:700,color:C.accent,fontFamily:MN}}>x{it.qty}</span>
+            </div>))}
+          </div>
+          {/* Notes */}
+          {bkDet.notes&&<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5}}>{bkDet.notes}</div></div>}
+          {/* History */}
+          <div style={{padding:"10px 18px"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>APPROVAL HISTORY</div>
+            <div style={{position:"relative",paddingLeft:12}}><div style={{position:"absolute",left:3,top:5,bottom:5,width:1.5,background:C.borderLight}}/>
+              {bkDet.history.map((h,i)=>(<div key={i} style={{position:"relative",marginBottom:10}}><div style={{position:"absolute",left:-9.5,top:3,width:6,height:6,borderRadius:"50%",background:i===0?C.accent:C.border,border:`1.5px solid ${i===0?C.accent:C.borderHeavy}`}}/><div style={{fontSize:9.5,color:C.muted,fontFamily:MN}}>{h.date}</div><div style={{fontSize:11.5,fontWeight:500,color:C.text,marginTop:1}}>{h.event}</div><div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>by {h.by}</div></div>))}
+            </div>
+          </div>
+        </div>)}
+      </div>
+    </>)}
+
+    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â NEW BOOKING FORM Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {tab==="newBooking"&&(<div style={{maxWidth:800}}>
+      <div style={{background:C.surface,borderRadius:10,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}>
+        <div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{fontSize:14,fontWeight:700}}>New Inventory Booking Request</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>Reserve inventory items for a refresh case or incident.</div></div>
+        <div style={{padding:"16px 20px"}}>
+          {/* Row 1 */}
+          <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+            <FF label="User Name *"><input value={form.user} onChange={e=>setForm(f=>({...f,user:e.target.value}))} placeholder="Full name" style={inp}/></FF>
+            <FF label="Location"><select value={form.loc} onChange={e=>setForm(f=>({...f,loc:e.target.value}))} style={inp}><option>Charlotte, NC (PTC)</option><option>Atlanta (ATL)</option><option>Chicago (CHI)</option><option>Birmingham (BHM)</option><option>Charlotte (CC3)</option><option>Remote</option></select></FF>
+          </div>
+          {/* Row 2 */}
+          <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+            <FF label="Request Type"><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} style={inp}><option>Refresh</option><option>Incident</option></select></FF>
+            <FF label={form.type==="Refresh"?"Refresh Case ID *":"Incident Number *"}><input value={form.ref} onChange={e=>setForm(f=>({...f,ref:e.target.value}))} placeholder={form.type==="Refresh"?"RC-2026-XXXX":"INC00XXXXX"} style={inp}/></FF>
+          </div>
+          {/* Row 3 */}
+          <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+            <FF label="Requested By"><input value={form.by} onChange={e=>setForm(f=>({...f,by:e.target.value}))} placeholder="Your name" style={inp}/></FF>
+            <FF label="Needed By Date"><input type="date" value={form.needed} onChange={e=>setForm(f=>({...f,needed:e.target.value}))} style={inp}/></FF>
+          </div>
+          {/* Notes */}
+          <FF label="Notes"><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={2} placeholder="Additional context\u2026" style={{...inp,resize:"vertical",fontFamily:SN}}/></FF>
+
+          {/* Items */}
+          <SH color={C.purple} badge={`${form.items.length} items`}>Requested Items</SH>
+          {form.items.map((it,idx)=>(<div key={idx} style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8,padding:"8px 10px",background:C.surfaceAlt,borderRadius:6,border:`1px solid ${C.borderLight}`}}>
+            <FF label="SKU *" w="160px"><select value={it.sku} onChange={e=>updItem(idx,"sku",e.target.value)} style={inp}><option value="">Select SKU\u2026</option>{invItems.filter(i=>i.q>0&&(i.s===it.sku||!form.items.some((row,rowIdx)=>rowIdx!==idx&&row.sku===i.s))).map(i=>(<option key={i.s} value={i.s}>{i.s} \u2014 {i.n} ({i.q} avail)</option>))}</select></FF>
+            <FF label="Product" w="220px"><input value={it.name} readOnly style={{...inp,background:C.panel,color:C.sub}} placeholder="Auto-filled"/></FF>
+            <FF label="Qty" w="70px"><input type="number" min={1} value={it.qty} onChange={e=>updItem(idx,"qty",e.target.value)} style={inp}/></FF>
+            {form.items.length>1&&<button onClick={()=>rmItem(idx)} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:11,fontWeight:600,cursor:"pointer",marginBottom:0,flexShrink:0}}>{"\u00D7"} Remove</button>}
+          </div>))}
+          <button onClick={addItem} style={{padding:"6px 12px",borderRadius:5,border:`1px dashed ${C.border}`,background:C.surface,color:C.accent,fontSize:11,fontWeight:600,cursor:"pointer",marginTop:4}}>+ Add Item</button>
+
+          {/* Submit */}
+          <div style={{display:"flex",gap:8,marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+            <button onClick={submitBooking} style={{padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Submit Booking Request</button>
+            <button onClick={()=>setTab("bookings")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:12,fontWeight:500,cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>)}
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OTHER VIEWS (compact) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+function CommandView({go}){const kp=useMemo(()=>({pen:CASES.filter(c=>c.status==="pending_contact").length,sch:CASES.filter(c=>c.status==="scheduled").length,rp:CASES.filter(c=>c.status==="return_pending").length,ci:CASES.filter(c=>c.status==="checked_in").length}),[]);return (<><div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Kpi label="Total Cases" value={CASES.length} color={C.accent}/><Kpi label="Pending Contact" value={kp.pen} color={C.gray} onClick={()=>go("refresh.queue")}/><Kpi label="Scheduled" value={kp.sch} color={C.cyan}/><Kpi label="Returns" value={kp.rp} color={C.red} alert onClick={()=>go("returns")}/><Kpi label="Checked In" value={kp.ci} color={C.green}/></div><SH color={C.cyan} badge={`${TECHS.length} techs`}>Technician Workload</SH><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:8}}>{TECHS.map(t=>{const a=CASES.filter(c=>c.tech===t.name).filter(c=>!["closed","checked_in"].includes(c.status));return (<div key={t.id} onClick={()=>go("refresh.techs")} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,cursor:"pointer"}}><div style={{fontSize:12.5,fontWeight:600}}>{t.name}</div><div style={{fontSize:9.5,color:C.muted,marginBottom:6}}>{t.role} {"\u00B7"} {t.home}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",textAlign:"center"}}>{[{l:"Active",v:a.length,c:C.amber},{l:"Done",v:CASES.filter(c=>c.tech===t.name&&["deploy_complete","closed"].includes(c.status)).length,c:C.green},{l:"Avg",v:t.avg+"m",c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:16,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontSize:8,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</div></>);}
+function QueueView({go,cases,onOpenCase,onOpenAsset}){
+  const actionBtn={padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"};
+  const caseIdSet=useMemo(()=>new Set(cases.map(cs=>cs.id).filter(Boolean)),[cases]);
+  const hasReturnAction=(row)=>["return_pending","checked_in"].includes(row.status);
+  return (<div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 230px)"}}><table style={{width:"100%",minWidth:920}}><thead><tr>{["Case","Asset","User","Office","Status","Urgency","Days","Tech","Scheduled","Actions"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead><tbody>{cases.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No refresh cases are currently in queue.</td></tr>}{cases.map((r,ri)=>{const rowBg=ri%2===0?C.surface:C.surfaceAlt;const hasCaseTarget=Boolean(r.id)&&caseIdSet.has(r.id);const hasAssetTarget=Boolean(r.at&&r.at!=="\u2014");const showReturn=hasReturnAction(r);return (<tr key={r.id}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.accent}}>{r.at}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:12,fontWeight:500}}>{r.user}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:C.sub}}>{r.office}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><RfChip s={r.status}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontSize:10,padding:"1px 5px",borderRadius:3,background:(r.urg==="HIGH"?C.red:C.amber)+"12",color:r.urg==="HIGH"?C.red:C.amber,fontWeight:700,fontFamily:MN}}>{r.urg}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,fontWeight:700,color:r.dte<=90?C.red:C.sub}}>{r.dte}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:r.tech?C.sub:C.light}}>{r.tech||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.sd||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{hasCaseTarget&&<button onClick={()=>{if(onOpenCase)onOpenCase(r.id);else if(go)go("cases.all");}} style={{...actionBtn,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent}}>Case</button>}{hasAssetTarget&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(r.at);else if(go)go("registry");}} style={{...actionBtn,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple}}>Asset</button>}{showReturn&&<button onClick={()=>{if(go)go("returns");}} style={{...actionBtn,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red}}>Return</button>}</div></td></tr>);})}</tbody></table></div>);
+}
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ASSET REGISTRY MODULE (System of Record) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const REG_ST={assigned:{l:"Assigned",c:C.green,bg:C.greenSoft,bd:C.greenBorder},inventory:{l:"In Stock",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},reserved:{l:"Reserved",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},pending_refresh:{l:"Pending Refresh",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},refresh_scheduled:{l:"Refresh Scheduled",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},pending_return:{l:"Pending Return",c:C.red,bg:C.redSoft,bd:C.redBorder},in_transit:{l:"In Transit",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},repair:{l:"In Repair",c:C.red,bg:C.redSoft,bd:C.redBorder},retired:{l:"Retired",c:C.gray,bg:C.graySoft,bd:C.grayBorder},raw_unknown_status:{l:"Unknown (blocked)",c:C.amber,bg:C.amberSoft,bd:C.amberBorder}};
+const REG_WAR={active:{l:"Active",c:C.green,bg:C.greenSoft},expiring:{l:"Exp. <90d",c:C.amber,bg:C.amberSoft},expired:{l:"Expired",c:C.red,bg:C.redSoft}};
+const RStChip=({s})=>{const x=REG_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",borderRadius:5,fontSize:11,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,whiteSpace:"nowrap"}}><span style={{width:6,height:6,borderRadius:"50%",background:x.c,flexShrink:0}}/>{x.l}</span>):(<span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>);};
+const RWChip=({s})=>{const x=REG_WAR[s];return x?(<span style={{padding:"2px 7px",borderRadius:4,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg}}>{x.l}</span>):(<span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>);};
+const RCDot=({v})=>{if(!v||v==="\u2014")return <span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>;const cl=v==="Compliant"?C.green:v==="Non-compliant"?C.red:C.muted;return (<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:cl}}><span style={{width:7,height:7,borderRadius:"50%",background:cl}}/>{v}</span>);};
+
+// â”€â”€â”€ SEED ASSET REGISTRY (default sample — replaced when AMS import is promoted) â”€â”€â”€
+const SEED_REG_ASSETS=[
+  {id:"a1",tag:"LT-4821",sn:"0F34BPW24223GT",model:"Dell Latitude 5540",cat:"Laptop",status:"assigned",user:"Jonathan Dinh",dept:"IT",office:"Charlotte",pd:"2024-11-15",we:"2027-11-15",ws:"active",le:"2027-11-15",age:"4 mo",cost:1347,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"Compliant",seen:"2025-03-05",cond:"Good",rf:false,po:"PO-2025-0142",notes:"Deployed Q4 2024 refresh.",hist:[{d:"2025-03-05",e:"Intune check-in",b:"System"},{d:"2024-11-18",e:"Assigned to Jonathan Dinh",b:"Micah Harris"},{d:"2024-11-15",e:"Received at Charlotte warehouse",b:"Anthony Cousin"},{d:"2024-11-01",e:"Asset created from PO-2025-0142",b:"System"}]},
+  {id:"a2",tag:"LT-3297",sn:"PF4KHRS1",model:"Lenovo ThinkPad T14s Gen 4",cat:"Laptop",status:"assigned",user:"Priya Sharma",dept:"Finance",office:"New York HQ",pd:"2022-06-10",we:"2025-06-10",ws:"expiring",le:"2025-06-10",age:"2 yr 9 mo",cost:1289,cc:"FIN-GEN-2022",vendor:"Lenovo",intune:"Compliant",seen:"2025-03-04",cond:"Fair",rf:true,po:"PO-2022-0087",notes:"Warranty expiring June 2025. Flagged."},
+  {id:"a3",tag:"LT-5010",sn:"C02FN3R4Q6LR",model:"Apple MacBook Pro 14\" M3",cat:"Laptop",status:"assigned",user:"Alex Kim",dept:"Engineering",office:"Austin",pd:"2024-03-22",we:"2027-03-22",ws:"active",le:"2027-03-22",age:"11 mo",cost:2199,cc:"ENG-DEV-2024",vendor:"Apple",intune:"Compliant",seen:"2025-03-05",cond:"Good",rf:false,po:"PO-2024-0034",notes:"Engineering standard config."},
+  {id:"a4",tag:"LT-2918",sn:"5CG1234XYZ",model:"HP EliteBook 860 G10",cat:"Laptop",status:"pending_refresh",user:"Maria Santos",dept:"Marketing",office:"Charlotte",pd:"2021-08-03",we:"2024-08-03",ws:"expired",le:"2024-08-03",age:"3 yr 7 mo",cost:1198,cc:"MKT-GEN-2021",vendor:"HP Inc.",intune:"Non-compliant",seen:"2025-03-03",cond:"Fair",rf:true,po:"PO-2021-0156",notes:"Age 43mo \u2014 auto-flagged. Warranty expired."},
+  {id:"a5",tag:"LT-5102",sn:"0F34CKW58817GT",model:"Dell Latitude 5540",cat:"Laptop",status:"reserved",user:"\u2192 Maria Santos",dept:"\u2014",office:"Charlotte",pd:"2025-01-20",we:"2028-01-20",ws:"active",le:"2028-01-20",age:"1 mo",cost:1347,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"New",rf:false,po:"PO-2025-0142",notes:"Reserved as replacement for LT-2918."},
+  {id:"a6",tag:"LT-3801",sn:"PF4L2MN8",model:"Lenovo ThinkPad T14s Gen 4",cat:"Laptop",status:"refresh_scheduled",user:"David Park",dept:"Legal",office:"Chicago",pd:"2021-11-12",we:"2024-11-12",ws:"expired",le:"2024-11-12",age:"3 yr 4 mo",cost:1289,cc:"LEG-GEN-2021",vendor:"Lenovo",intune:"Compliant",seen:"2025-03-04",cond:"Fair",rf:true,po:"PO-2021-0201",notes:"Refresh Mar 12. Tech: Jonathan Gamble."},
+  {id:"a7",tag:"LT-4455",sn:"C02DM9R2Q6LR",model:"Apple MacBook Pro 14\" M2",cat:"Laptop",status:"pending_return",user:"Rachel Torres",dept:"Sales",office:"Remote \u2014 Denver",pd:"2023-01-09",we:"2026-01-09",ws:"active",le:"2026-01-09",age:"2 yr 2 mo",cost:2099,cc:"SAL-WEST-2023",vendor:"Apple",intune:"Compliant",seen:"2025-03-01",cond:"Good",rf:false,po:"PO-2023-0012",notes:"Last day Mar 7. FedEx label sent."},
+  {id:"a8",tag:"LT-5088",sn:"0F34CKW58790GT",model:"Dell Latitude 5540",cat:"Laptop",status:"inventory",user:"\u2014",dept:"\u2014",office:"Charlotte",pd:"2025-01-20",we:"2028-01-20",ws:"active",le:"2028-01-20",age:"1 mo",cost:1347,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"New",rf:false,po:"PO-2025-0142",notes:"Available. Autopilot registered."},
+  {id:"a9",tag:"LT-5091",sn:"0F34CKW58803GT",model:"Dell Latitude 5540",cat:"Laptop",status:"inventory",user:"\u2014",dept:"\u2014",office:"New York HQ",pd:"2025-01-20",we:"2028-01-20",ws:"active",le:"2028-01-20",age:"1 mo",cost:1347,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"New",rf:false,po:"PO-2025-0142",notes:"NY stock. Ready."},
+  {id:"a10",tag:"LT-2103",sn:"5CG0988ABC",model:"HP EliteBook 840 G8",cat:"Laptop",status:"repair",user:"\u2014",dept:"\u2014",office:"HP Repair Depot",pd:"2021-03-15",we:"2024-03-15",ws:"expired",le:"2024-03-15",age:"4 yr",cost:1156,cc:"IT-OPS-2021",vendor:"HP Inc.",intune:"\u2014",seen:"2025-02-20",cond:"Damaged",rf:true,po:"PO-2021-0044",notes:"Screen failure. Repair $680."},
+  {id:"a11",tag:"LT-1887",sn:"PF2JKNM4",model:"Lenovo ThinkPad X1 Carbon Gen 9",cat:"Laptop",status:"retired",user:"\u2014",dept:"\u2014",office:"Disposal Queue",pd:"2020-04-22",we:"2023-04-22",ws:"expired",le:"2023-04-22",age:"4 yr 11 mo",cost:1449,cc:"IT-OPS-2020",vendor:"Lenovo",intune:"\u2014",seen:"2024-12-01",cond:"End of Life",rf:false,po:"PO-2020-0078",notes:"Retired Feb 2025. Cert: CD-2025-0091."},
+  {id:"a12",tag:"LT-4620",sn:"0F34BPW24100GT",model:"Dell Latitude 5440",cat:"Laptop",status:"in_transit",user:"\u2192 James Wright",dept:"HR",office:"Remote \u2014 Atlanta",pd:"2024-09-10",we:"2027-09-10",ws:"active",le:"2027-09-10",age:"6 mo",cost:1247,cc:"HR-GEN-2024",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"New",rf:false,po:"PO-2024-0201",notes:"Shipping to new hire. ETA Mar 7."},
+  {id:"a13",tag:"MN-0842",sn:"CN0FP123456",model:"Dell P2722H 27\" Monitor",cat:"Monitor",status:"assigned",user:"Jonathan Dinh",dept:"IT",office:"Charlotte",pd:"2024-11-15",we:"2027-11-15",ws:"active",le:"\u2014",age:"4 mo",cost:289,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"Good",rf:false,po:"PO-2025-0142",notes:"With LT-4821 desk kit."},
+  {id:"a14",tag:"DK-0341",sn:"DKWD22TB4001",model:"Dell WD22TB4 Dock",cat:"Dock",status:"inventory",user:"\u2014",dept:"\u2014",office:"Charlotte",pd:"2025-01-20",we:"2028-01-20",ws:"active",le:"\u2014",age:"1 mo",cost:279,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"\u2014",seen:"\u2014",cond:"New",rf:false,po:"PO-2025-0142",notes:"Charlotte stock."},
+  {id:"a15",tag:"TP-2744",sn:"BK37V9725243P7",model:"Lenovo ThinkPad X1 Gen 9",cat:"Laptop",status:"refresh_scheduled",user:"Cara Warren",dept:"Operations",office:"Atlanta (ATL)",pd:"2022-08-10",we:"2025-08-10",ws:"expiring",le:"2026-05-18",age:"2 yr 7 mo",cost:1289,cc:"OPS-GEN-2022",vendor:"Lenovo",intune:"Compliant",seen:"2026-03-05",cond:"Good",rf:true,po:"PO-2022-0091",notes:"Refresh case CS-2026-0003. Scheduled Mar 18.",hist:[{d:"2026-03-05",e:"Refresh scheduled",b:"Micah Harris"},{d:"2022-08-15",e:"Assigned to Cara Warren",b:"System"}]},
+  {id:"a16",tag:"TY-2580",sn:"0F38TM324343GT",model:"Lenovo ThinkPad Yoga Gen 8",cat:"Laptop",status:"refresh_scheduled",user:"Angus Gambill",dept:"Finance",office:"Charlotte (PTC)",pd:"2022-02-15",we:"2025-02-15",ws:"expired",le:"2026-03-20",age:"3 yr 1 mo",cost:1347,cc:"FIN-GEN-2022",vendor:"Lenovo",intune:"Compliant",seen:"2026-03-15",cond:"Fair",rf:true,po:"PO-2022-0044",notes:"Refresh case CS-2026-0004. New device provisioned.",hist:[{d:"2026-03-15",e:"Device provisioned",b:"Anthony Cousin"},{d:"2022-02-20",e:"Assigned",b:"System"}]},
+  {id:"a17",tag:"TP-2801",sn:"TP-2801",model:"Lenovo ThinkPad Yoga",cat:"Laptop",status:"pending_return",user:"Sam Vives",dept:"Legal",office:"Charlotte (PTC)",pd:"2021-11-12",we:"2024-11-12",ws:"expired",le:"2024-11-12",age:"3 yr 4 mo",cost:1289,cc:"LEG-GEN-2021",vendor:"Lenovo",intune:"Compliant",seen:"2026-03-03",cond:"Fair",rf:true,po:"PO-2021-0201",notes:"Return case CS-2026-0009. FedEx label sent.",hist:[{d:"2026-03-03",e:"Return label sent",b:"Anthony Cousin"},{d:"2021-11-18",e:"Assigned to Sam Vives",b:"System"}]},
+];
+
+// ─── NORMALIZED ASSET SCHEMA ───────────────────────────────────────────────
+// This is the canonical shape every asset record must conform to, whether it
+// comes from the seed dataset, an AMS CSV import, or a manual entry.
+// Modules must only read fields defined here.
+//
+// Field reference:
+//   id          string  — unique record id (equals tag for AMS imports)
+//   tag         string  — asset tag / AMS AssetsID             (required)
+//   sn          string  — serial number                        (required, fallback to tag)
+//   model       string  — device model                        ("—" if unknown)
+//   cat         string  — category (Laptop, Monitor, Dock…)   ("Laptop" default)
+//   status      string  — normalized lifecycle status key     (see REG_ST)
+//   user        string  — assigned user full name             ("—" if unassigned)
+//   dept        string  — department / cost center team       ("—" if unknown)
+//   office      string  — office / location label             ("—" if unknown)
+//   pd          string  — purchase / deployment date YYYY-MM-DD ("—" if unknown)
+//   we          string  — warranty expiry date YYYY-MM-DD     ("—" if unknown)
+//   ws          string  — warranty status key (active/expiring/expired/"—")
+//   le          string  — lease end date YYYY-MM-DD           ("—" if none)
+//   leaseNum    string  — lease contract number               ("—" if none)
+//   ram         string  — RAM e.g. "32GB"                     ("—" if unknown)
+//   age         string  — human-readable age e.g. "2 yr 4 mo" ("—" if unknown)
+//   cost        number  — unit cost USD                       (0 if unknown)
+//   cc          string  — cost center code                    ("—" if unknown)
+//   vendor      string  — device vendor name                  ("—" if unknown)
+//   po          string  — purchase order number               ("—" if unknown)
+//   intune      string  — Intune compliance ("Compliant"/"Non-compliant"/"—")
+//   seen        string  — last Intune sync date YYYY-MM-DD    ("—" if unknown)
+//   cond        string  — physical condition label            ("—" if unknown)
+//   rf          boolean — refresh eligible flag (derived from we/status)
+//   notes       string  — free-text notes                     ("" if none)
+//   shipAddr    string  — shipping address from AMS           ("" if none)
+//   hist        array   — [{d,e,b}] audit history entries     ([] if none)
+//   reservation object|null — active reservation {type,label,ts} or null
+//   // AMS import internals (strip before display):
+//   _idKey      string  — normalised id for dedup
+//   _snKey      string  — normalised serial for dedup
+//   _sourceSerial string — raw serial before fallback
+//   _rawStatus  string  — raw AMS status string before mapping
+//   _rawWe      string  — raw warranty date string
+//   _rawPd      string  — raw purchase date string
+//   assetsName  string  — AMS AssetsName field (raw)
+//   assetsType  string  — AMS AssetsType field (raw)
+// ──────────────────────────────────────────────────────────────────────────
+
+// normalizeSeedAsset — ensures a hand-authored seed record has all required
+// schema fields, applying safe defaults for anything missing.
+// Does NOT mutate the original; returns a new object.
+const FALLBACK="\u2014";
+const normalizeSeedAsset=(raw)=>({
+  id:           raw.id       || raw.tag || "",
+  tag:          raw.tag      || "",
+  sn:           raw.sn       || raw.tag || "",
+  model:        raw.model    || FALLBACK,
+  cat:          raw.cat      || "Laptop",
+  status:       raw.status   || "inventory",
+  user:         raw.user     || FALLBACK,
+  dept:         raw.dept     || FALLBACK,
+  office:       raw.office   || FALLBACK,
+  pd:           raw.pd       || FALLBACK,
+  we:           raw.we       || FALLBACK,
+  ws:           raw.ws       || (raw.we&&raw.we!==FALLBACK?warrantyStatus(raw.we):FALLBACK),
+  le:           raw.le       || FALLBACK,
+  leaseNum:     raw.leaseNum || FALLBACK,
+  ram:          raw.ram      || FALLBACK,
+  age:          raw.age      || FALLBACK,
+  cost:         typeof raw.cost==="number"?raw.cost:0,
+  cc:           raw.cc       || FALLBACK,
+  vendor:       raw.vendor   || FALLBACK,
+  po:           raw.po       || FALLBACK,
+  intune:       raw.intune   || FALLBACK,
+  seen:         raw.seen     || FALLBACK,
+  cond:         raw.cond     || FALLBACK,
+  rf:           Boolean(raw.rf),
+  notes:        raw.notes    || "",
+  shipAddr:     raw.shipAddr || "",
+  hist:         Array.isArray(raw.hist)?raw.hist:[],
+  reservation:  raw.reservation||null,
+  // AMS import internals — set to defaults for seed records
+  assetsName:   raw.assetsName  || "",
+  assetsType:   raw.assetsType  || "",
+  _idKey:       (raw.tag||raw.id||"").trim().toUpperCase(),
+  _snKey:       (raw.sn||raw.tag||"").trim().toUpperCase(),
+  _sourceSerial:raw.sn||"",
+  _rawStatus:   raw.status||"",
+  _rawWe:       raw.we||"",
+  _rawPd:       raw.pd||"",
+});
+
+// ─── EXAMPLE MAPPING (AMS export row → normalized asset) ──────────────────
+// Raw AMS CSV row (headers + values):
+//   AssetsID: "0F3C3TK24023GT"
+//   AssetsName: "0F3C3TK24023GT"
+//   Category: "Laptop"
+//   AssetsType: "Laptop"
+//   Status: "Assigned"
+//   AssetsLocation: "Hunt Valley- MD (HVL)"
+//   AssignedTo: "Diana Kuessner"
+//   AssignedDate: "2024-08-05T13:58:32Z"
+//   WarrantyExpiryDate: "2028-06-30T04:00:00Z"
+//   Notes: "777798775819 / 791488383041"
+//   AssetModelNumber: "Surface Laptop 6"
+//   SerialNumber: "0F3C3TK24023GT"
+//   ShippingAddress: "11350 McCormick Rd Executive Plaza Building 4 Suite 400\nHunt Valley- MD 21031"
+//   LeaseNumber: "908-0023039-000"
+//   Ram: "32"
+//
+// Resulting normalized asset object (produced by normalizeAmsRow):
+//   {
+//     id: "0F3C3TK24023GT", tag: "0F3C3TK24023GT", sn: "0F3C3TK24023GT",
+//     model: "Surface Laptop 6", cat: "Laptop", status: "assigned",
+//     user: "Diana Kuessner", dept: "—",
+//     office: "Hunt Valley- MD (HVL)",
+//     pd: "2024-08-05", we: "2028-06-30", ws: "active", le: "2028-06-30",
+//     leaseNum: "908-0023039-000", ram: "32GB",
+//     age: "—", cost: 0, cc: "—", vendor: "Microsoft",
+//     intune: "—", seen: "—", cond: "—",
+//     rf: false, po: "—",
+//     notes: "777798775819 / 791488383041",
+//     shipAddr: "11350 McCormick Rd...",
+//     hist: [], reservation: null,
+//     _rawStatus: "Assigned", _sourceSerial: "0F3C3TK24023GT", ...
+//   }
+// ──────────────────────────────────────────────────────────────────────────
+
+// Backward-compatible alias — Exec/Ops/Alerts modules still read this.
+// AssetRegistryModule uses the stateful `assets` prop instead.
+let REG_ASSETS=SEED_REG_ASSETS;
+
+const REG_COLS=[
+  {k:"tag",l:"Asset Tag",w:100,d:true},{k:"sn",l:"Serial",w:140,d:false},{k:"model",l:"Model",w:200,d:true},{k:"cat",l:"Category",w:80,d:true},{k:"status",l:"Status",w:140,d:true},{k:"user",l:"Assigned User",w:140,d:true},{k:"dept",l:"Department",w:100,d:true},{k:"office",l:"Office",w:120,d:true},{k:"age",l:"Age",w:70,d:true},{k:"ws",l:"Warranty",w:95,d:true},{k:"intune",l:"Compliance",w:100,d:true},{k:"pd",l:"Purchase Date",w:100,d:false},{k:"we",l:"Warranty Exp.",w:100,d:false},{k:"le",l:"Lease End",w:95,d:false},{k:"leaseNum",l:"Lease #",w:130,d:false},{k:"cond",l:"Condition",w:85,d:false},{k:"cost",l:"Cost",w:80,d:false},{k:"cc",l:"Cost Center",w:115,d:false},{k:"vendor",l:"Vendor",w:120,d:false},{k:"po",l:"PO Number",w:115,d:false},{k:"rf",l:"Refresh Flag",w:90,d:true},
+];
+
+function regCell(a,k){
+  switch(k){
+    case "tag":return <span style={{fontFamily:MN,fontSize:12,color:C.accent,fontWeight:600}}>{a.tag}</span>;
+    case "sn":return <span style={{fontFamily:MN,fontSize:11,color:C.sub}}>{a.sn}</span>;
+    case "model":return <span style={{fontSize:12.5,fontWeight:500}}>{a.model}</span>;
+    case "cat":return <span style={{fontSize:12,color:C.sub}}>{a.cat}</span>;
+    case "status":return <RStChip s={a.status}/>;
+    case "user":return a.user==="\u2014"?<span style={{color:C.muted}}>{"\u2014"}</span>:<span style={{fontSize:12.5,fontWeight:500,color:a.user.startsWith("\u2192")?C.purple:C.text}}>{a.user||"—"}</span>;
+    case "dept":return <span style={{fontSize:12,color:C.sub}}>{a.dept}</span>;
+    case "office":return <span style={{fontSize:12,color:C.sub}}>{a.office}</span>;
+    case "age":{const ageMonths=parseAssetAgeMonths(a.age);return <span style={{fontFamily:MN,fontSize:11.5,color:ageMonths>=36?C.red:C.sub}}>{a.age}</span>;}
+    case "ws":return <RWChip s={a.ws}/>;
+    case "intune":return <RCDot v={a.intune}/>;
+    case "pd":return <span style={{fontFamily:MN,fontSize:11,color:C.sub}}>{a.pd}</span>;
+    case "we":return <span style={{fontFamily:MN,fontSize:11,color:C.sub}}>{a.we}</span>;
+    case "le":return <span style={{fontFamily:MN,fontSize:11,color:C.sub}}>{a.le}</span>;
+    case "leaseNum":return <span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{a.leaseNum||"\u2014"}</span>;
+    case "cond":return <span style={{fontSize:12,color:a.cond==="Damaged"?C.red:C.sub}}>{a.cond}</span>;
+    case "cost":return <span style={{fontFamily:MN,fontSize:11,color:C.sub}}>${a.cost.toLocaleString()}</span>;
+    case "cc":return <span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{a.cc}</span>;
+    case "vendor":return <span style={{fontSize:12,color:C.sub}}>{a.vendor}</span>;
+    case "po":return <span style={{fontFamily:MN,fontSize:11,color:C.accent}}>{a.po}</span>;
+    case "rf":return a.rf?<span style={{fontSize:10.5,padding:"2px 6px",borderRadius:4,background:C.amberSoft,color:C.amber,fontWeight:600}}>Eligible</span>:<span style={{color:C.muted}}>{"\u2014"}</span>;
+    default:return "\u2014";
+  }
+}
+
+function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go,selectedAssetTag,onClearAssetSelection,onUpdateAsset,assetActivity=[]}){
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+  const [rfOnly,setRfOnly]=useState(false);
+  const [q,setQ]=useState("");
+  const [visCols,setVisCols]=useState(()=>REG_COLS.filter(c=>c.d).map(c=>c.k));
+  const [colCfg,setColCfg]=useState(false);
+  const [sC,setSC]=useState(null);
+  const [sD,setSD]=useState("asc");
+  const [page,setPage]=useState(0);
+  const [assignmentDraft,setAssignmentDraft]=useState({user:"",office:"",dept:""});
+  const PAGE_SIZE=100;
+  const assetByTag=useMemo(()=>new Map(assets.map(a=>[a.tag,a])),[assets]);
+  const assetIndexById=useMemo(()=>new Map(assets.map((a,idx)=>[a.id,idx])),[assets]);
+  // Debounce search input — avoids re-filtering 11k rows on every keystroke
+  const [debouncedQ,setDebouncedQ]=useState("");
+  useEffect(()=>{const t=setTimeout(()=>setDebouncedQ(q),200);return()=>clearTimeout(t);},[q]);
+  // Typeahead suggestion state
+  const [showSuggestions,setShowSuggestions]=useState(false);
+  const [suggestionIdx,setSuggestionIdx]=useState(-1);
+  const searchWrapRef=useRef(null);
+  // Close suggestion list on outside click
+  useEffect(()=>{
+    const handler=(e)=>{if(searchWrapRef.current&&!searchWrapRef.current.contains(e.target))setShowSuggestions(false);};
+    document.addEventListener("mousedown",handler);
+    return()=>document.removeEventListener("mousedown",handler);
+  },[]);
+  // Ranked suggestion computation — only when q >= 2 chars, capped at 8
+  // Priority: exact tag > tag startsWith > serial startsWith > model contains > user contains > office contains > dept contains
+  const suggestions=useMemo(()=>{
+    const raw=q.trim();
+    if(raw.length<2)return [];
+    const lq=raw.toLowerCase();
+    const exactTag=[],startsTag=[],startsSn=[],hasModel=[],hasUser=[],hasOffice=[],hasDept=[];
+    for(let i=0;i<assets.length;i++){
+      const a=assets[i];
+      const tag=(a.tag||"").toLowerCase();
+      const sn=(a.sn||"").toLowerCase();
+      const model=(a.model||"\u2014").toLowerCase();
+      const user=(a.user||"\u2014").toLowerCase();
+      const office=(a.office||"").toLowerCase();
+      const dept=(a.dept||"").toLowerCase();
+      if(tag===lq){exactTag.push(a);}
+      else if(tag.startsWith(lq)){startsTag.push(a);}
+      else if(sn.startsWith(lq)){startsSn.push(a);}
+      else if(model!=="\u2014"&&model.includes(lq)){hasModel.push(a);}
+      else if(user!=="\u2014"&&user.includes(lq)){hasUser.push(a);}
+      else if(office&&office.includes(lq)){hasOffice.push(a);}
+      else if(dept&&dept.includes(lq)){hasDept.push(a);}
+      // Early exit once we have more than enough candidates
+      if(exactTag.length+startsTag.length+startsSn.length+hasModel.length+hasUser.length+hasOffice.length+hasDept.length>=32)break;
+    }
+    return [...exactTag,...startsTag,...startsSn,...hasModel,...hasUser,...hasOffice,...hasDept].slice(0,8);
+  },[q,assets]);
+  // Reset highlighted index when suggestion list changes
+  useEffect(()=>{setSuggestionIdx(-1);},[suggestions]);
+  const selectSuggestion=useCallback((a)=>{
+    setQ(a.tag);
+    setShowSuggestions(false);
+    setSuggestionIdx(-1);
+    setSel(a.id);
+    setStF("all");
+    setRfOnly(false);
+    const idx=assetIndexById.get(a.id);
+    if(idx!=null)setPage(Math.floor(idx/PAGE_SIZE));
+  },[assetIndexById]);
+  const casesByAssetTag=useMemo(()=>{
+    const map=new Map();
+    if(!cases)return map;
+    cases.forEach(cs=>{
+      [cs.assetId,cs.replacementId].forEach(tag=>{
+        if(!tag)return;
+        const list=map.get(tag);
+        if(list)list.push(cs);
+        else map.set(tag,[cs]);
+      });
+    });
+    return map;
+  },[cases]);
+
+  // Deep link: when opened from case "View Asset", select that asset and clear the request
+  useEffect(()=>{
+    if(!selectedAssetTag||!onClearAssetSelection)return;
+    const asset=assetByTag.get(selectedAssetTag);
+    if(asset){
+      setSel(asset.id);
+      setStF("all");
+      setRfOnly(false);
+      setQ("");
+      const idx=assetIndexById.get(asset.id);
+      if(idx>=0)setPage(Math.min(Math.floor(idx/PAGE_SIZE),Math.max(0,Math.ceil(assets.length/PAGE_SIZE)-1)));
+    }
+    else setSel(null);
+    onClearAssetSelection();
+  },[selectedAssetTag,assetByTag,assetIndexById,assets.length,onClearAssetSelection]);
+
+  const filt=useMemo(()=>{
+    let list=assets;
+    if(stF!=="all")list=list.filter(a=>a.status===stF);
+    if(rfOnly)list=list.filter(a=>a.rf);
+    if(debouncedQ.trim()){const lq=debouncedQ.toLowerCase();list=list.filter(a=>a.tag.toLowerCase().includes(lq)||a.sn.toLowerCase().includes(lq)||a.model.toLowerCase().includes(lq)||a.user.toLowerCase().includes(lq)||a.office.toLowerCase().includes(lq)||a.dept.toLowerCase().includes(lq));}
+    if(sC){list=[...list].sort((a,b)=>{const va=a[sC]??"";const vb=b[sC]??"";const cmp=String(va).localeCompare(String(vb),undefined,{numeric:true});return sD==="asc"?cmp:-cmp;});}
+    return list;
+  },[assets,stF,rfOnly,debouncedQ,sC,sD]);
+  useEffect(()=>{setPage(0);},[stF,rfOnly,debouncedQ]);
+  const stCounts=useMemo(()=>{const c={};assets.forEach(a=>{c[a.status]=(c[a.status]||0)+1;});return c;},[assets]);
+  const refreshEligibleCount=useMemo(()=>assets.filter(a=>a.rf).length,[assets]);
+  const cols=useMemo(()=>REG_COLS.filter(c=>visCols.includes(c.k)),[visCols]);
+  const totalPages=useMemo(()=>Math.max(1,Math.ceil(filt.length/PAGE_SIZE)),[filt.length]);
+  const pageData=useMemo(()=>filt.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE),[filt,page]);
+  const det=useMemo(()=>sel?(assetIndexById.has(sel)?assets[assetIndexById.get(sel)]:null):null,[sel,assetIndexById,assets]);
+  const linkedCases=useMemo(()=>det?(casesByAssetTag.get(det.tag)||[]):[],[det,casesByAssetTag]);
+  const activeLinkedCases=useMemo(()=>linkedCases.filter(cs=>!CLOSED_CASE_STATUSES.includes(cs.status)),[linkedCases]);
+  const assetTimeline=useMemo(()=>det?assetActivity.filter(e=>e.asset===det.tag).sort((a,b)=>b.ts.localeCompare(a.ts)).slice(0,12):[],[det,assetActivity]);
+  const hS=(k)=>{if(sC===k)setSD(d=>d==="asc"?"desc":"asc");else{setSC(k);setSD("asc");}};
+  useEffect(()=>{
+    if(!det){setAssignmentDraft({user:"",office:"",dept:""});return;}
+    const cleanUser=det.user&&det.user!=="\u2014"&&!String(det.user).startsWith("\u2192")?det.user:"";
+    setAssignmentDraft({user:cleanUser,office:det.office&&det.office!=="\u2014"?det.office:"",dept:det.dept&&det.dept!=="\u2014"?det.dept:""});
+  },[det]);
+  const fieldInp={width:"100%",padding:"6px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11,color:C.text,outline:"none",background:C.panel,fontFamily:SN};
+  const updateAssetState=(changes,entries)=>{
+    if(!det||!onUpdateAsset)return;
+    onUpdateAsset(det.tag,a=>({...a,...changes}),entries);
+  };
+  const markInStock=()=>updateAssetState({status:"inventory",user:"\u2014",dept:"\u2014",reservation:null},[createAssetActivityEntry({asset:det.tag,label:"Marked In Stock",detail:"Asset returned to available inventory"})]);
+  const markAssigned=()=>{
+    const user=assignmentDraft.user.trim();
+    if(!user){setToast("Assigned user is required.");return;}
+    const office=assignmentDraft.office.trim()||"\u2014";
+    const dept=assignmentDraft.dept.trim()||"\u2014";
+    const entries=[createAssetActivityEntry({asset:det.tag,label:"Marked Assigned",detail:`${user}${office!=="\u2014"?` · ${office}`:""}`})];
+    if(user!==(det.user||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Assigned user changed",detail:`${det.user||"\u2014"} \u2192 ${user}`}));
+    if(office!==(det.office||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Office updated",detail:`${det.office||"\u2014"} \u2192 ${office}`}));
+    if(dept!==(det.dept||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Department updated",detail:`${det.dept||"\u2014"} \u2192 ${dept}`}));
+    updateAssetState({status:"assigned",user,office,dept,reservation:null},entries);
+  };
+  const saveAssignedDetails=()=>{
+    if(!det)return;
+    const user=assignmentDraft.user.trim();
+    const office=assignmentDraft.office.trim()||"\u2014";
+    const dept=assignmentDraft.dept.trim()||"\u2014";
+    const entries=[];
+    if(user&&user!==(det.user||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Assigned user changed",detail:`${det.user||"\u2014"} \u2192 ${user}`}));
+    if(office!==(det.office||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Office updated",detail:`${det.office||"\u2014"} \u2192 ${office}`}));
+    if(dept!==(det.dept||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Department updated",detail:`${det.dept||"\u2014"} \u2192 ${dept}`}));
+    if(entries.length===0){setToast(`No assignment changes for ${det.tag}`);return;}
+    updateAssetState({user:user||det.user||"\u2014",office,dept},entries);
+  };
+  const markPendingReturn=()=>updateAssetState({status:"pending_return",reservation:null},[createAssetActivityEntry({asset:det.tag,label:"Marked Pending Return",detail:"Awaiting return processing"})]);
+  const markInRepair=()=>updateAssetState({status:"repair",reservation:null},[createAssetActivityEntry({asset:det.tag,label:"Marked In Repair",detail:"Asset moved into repair workflow"})]);
+  const markRetired=()=>updateAssetState({status:"retired",reservation:null,user:"\u2014"},[createAssetActivityEntry({asset:det.tag,label:"Marked Retired",detail:"Asset removed from active lifecycle"})]);
+  const reserveForRefresh=()=>updateAssetState({status:"reserved",reservation:{type:"refresh",label:"Reserved for refresh",ts:toLocalTimestamp()}},[createAssetActivityEntry({asset:det.tag,label:"Reserved for refresh",detail:"Held for upcoming refresh deployment"})]);
+  const clearReservation=()=>updateAssetState({status:"inventory",reservation:null,user:"\u2014",dept:"\u2014"},[createAssetActivityEntry({asset:det.tag,label:"Reservation cleared",detail:"Asset returned to available inventory"})]);
+  const drawerActionBtn={padding:"5px 10px",borderRadius:5,fontSize:10.5,fontWeight:600,cursor:"pointer"};
+  const hasActiveCaseOfType=(type)=>activeLinkedCases.some(cs=>cs.type===type);
+  const openCreateCaseFromAsset=(type)=>{
+    if(!det||!setCasePrefill)return;
+    const userId=det.user&&det.user!=="\u2014"&&!String(det.user).startsWith("\u2192")?det.user:"";
+    const context=[
+      "Created from Asset Registry",
+      `Asset Tag: ${det.tag}`,
+      `Serial: ${det.sn||"\u2014"}`,
+      `Model: ${det.model||"\u2014"}`,
+      `Assigned User: ${userId||"\u2014"}`,
+      `Office: ${det.office||"\u2014"}`,
+      `Department: ${det.dept||"\u2014"}`,
+      `Current asset status: ${REG_ST[det.status]?.l||det.status}`,
+    ];
+    if(det.reservation?.label)context.push(`Reservation: ${det.reservation.label}`);
+    setCasePrefill({type,assetId:det.tag,userId,locationId:det.office&&det.office!=="\u2014"?det.office:"",notes:context.join("\n")});
+    go("cases.create");
+  };
+  const caseCreateActions=[
+    {type:"refresh",label:"Create Refresh Case",hint:"Active refresh case already exists",style:{border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan}},
+    {type:"return_case",label:"Create Return Case",hint:"Active return case already exists",style:{border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber}},
+    {type:"break_fix",label:"Create Break/Fix Case",hint:"Active break/fix case already exists",style:{border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange}},
+  ];
+
+  return (<>
+    {/* KPIs */}
+    <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+      <Kpi label="Total Assets" value={assets.length.toLocaleString()} sub={`${new Set(assets.map(a=>a.office)).size} locations`} color={C.accent}/>
+      <Kpi label="Assigned" value={(stCounts.assigned||0).toLocaleString()} sub={`${assets.length?Math.round((stCounts.assigned||0)/assets.length*100):0}% deployed`} color={C.green}/>
+      <Kpi label="In Stock" value={((stCounts.inventory||0)+(stCounts.reserved||0)).toLocaleString()} sub={`${stCounts.reserved||0} reserved`} color={C.cyan}/>
+      <Kpi label="Pending Refresh" value={((stCounts.pending_refresh||0)+(stCounts.refresh_scheduled||0)).toLocaleString()} color={C.amber}/>
+      <Kpi label="Pending Returns" value={(stCounts.pending_return||0).toLocaleString()} color={C.red}/>
+      <Kpi label="In Repair" value={(stCounts.repair||0).toLocaleString()} color={C.red}/>
+    </div>
+    {/* Filter bar */}
+    <div style={{background:C.surface,borderRadius:10,padding:"10px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <div ref={searchWrapRef} style={{position:"relative",flex:"0 0 240px"}}>
+        <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:13,pointerEvents:"none"}}>{"\u2315"}</span>
+        <input
+          value={q}
+          onChange={e=>{setQ(e.target.value);setShowSuggestions(true);setSuggestionIdx(-1);}}
+          onFocus={()=>{if(q.trim().length>=2)setShowSuggestions(true);}}
+          onKeyDown={e=>{
+            if(!showSuggestions||suggestions.length===0){return;}
+            if(e.key==="ArrowDown"){e.preventDefault();setSuggestionIdx(i=>Math.min(i+1,suggestions.length-1));}
+            else if(e.key==="ArrowUp"){e.preventDefault();setSuggestionIdx(i=>Math.max(i-1,-1));}
+            else if(e.key==="Enter"){e.preventDefault();const target=suggestionIdx>=0?suggestions[suggestionIdx]:suggestions[0];if(target)selectSuggestion(target);}
+            else if(e.key==="Escape"){setShowSuggestions(false);setSuggestionIdx(-1);}
+          }}
+          placeholder="Search tag, serial, user, model\u2026"
+          style={{width:"100%",padding:"7px 10px 7px 28px",borderRadius:6,border:`1px solid ${showSuggestions&&suggestions.length>0?C.accent:C.border}`,fontSize:12,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}
+        />
+        {showSuggestions&&suggestions.length>0&&(
+          <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,width:360,background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:7,boxShadow:C.shadowMd,zIndex:50,overflow:"hidden"}}>
+            {suggestions.map((a,i)=>{
+              const isActive=i===suggestionIdx;
+              return (
+                <div key={a.id}
+                  onMouseDown={e=>{e.preventDefault();selectSuggestion(a);}}
+                  onMouseEnter={()=>setSuggestionIdx(i)}
+                  style={{display:"grid",gridTemplateColumns:"110px 1fr 100px",alignItems:"center",gap:6,padding:"7px 10px",cursor:"pointer",borderBottom:i<suggestions.length-1?`1px solid ${C.borderLight}`:"none",background:isActive?C.accentSoft:"transparent"}}>
+                  <span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.tag}</span>
+                  <span style={{fontSize:11,color:C.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.model!=="\u2014"?a.model:a.sn||"\u2014"}</span>
+                  <span style={{fontSize:10,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{a.user!=="\u2014"?a.user:a.office||"\u2014"}</span>
+                </div>
+              );
+            })}
+            <div style={{padding:"4px 10px",borderTop:`1px solid ${C.borderLight}`,fontSize:9.5,color:C.muted,fontFamily:MN,display:"flex",justifyContent:"space-between"}}>
+              <span>{suggestions.length} match{suggestions.length!==1?"es":""}</span>
+              <span>↑↓ navigate · Enter select · Esc close</span>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{width:1,height:22,background:C.border}}/>
+      <button onClick={()=>setStF("all")} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${stF==="all"?C.accent:C.border}`,background:stF==="all"?C.accentSoft:C.surface,color:stF==="all"?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({assets.length.toLocaleString()})</button>
+      {Object.entries(REG_ST).map(([k,s])=>{const n=stCounts[k]||0;return n>0?(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}>{s.l} ({n})</button>):null;})}
+      {refreshEligibleCount>0&&<button onClick={()=>{setRfOnly(v=>!v);setSel(null);}} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${rfOnly?C.amber:C.border}`,background:rfOnly?C.amberSoft:C.surface,color:rfOnly?C.amber:C.sub,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}>Refresh Eligible ({refreshEligibleCount.toLocaleString()})</button>}
+      <div style={{flex:1}}/>
+      <div style={{position:"relative"}}><button onClick={()=>setColCfg(!colCfg)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${colCfg?C.accent:C.border}`,background:colCfg?C.accentSoft:C.surface,color:colCfg?C.accent:C.sub,fontSize:11,cursor:"pointer"}}>{"\u229E"} Columns ({visCols.length}/{REG_COLS.length})</button>
+        {colCfg&&<div style={{position:"absolute",right:0,top:"calc(100% + 6px)",width:270,background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,boxShadow:C.shadowMd,padding:10,zIndex:40,maxHeight:380,overflowY:"auto"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",marginBottom:6}}>VISIBLE COLUMNS</div>{REG_COLS.map(col=>(<label key={col.k} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 5px",borderRadius:4,cursor:"pointer",fontSize:12,color:C.text}}><input type="checkbox" checked={visCols.includes(col.k)} onChange={()=>setVisCols(p=>p.includes(col.k)?p.filter(x=>x!==col.k):[...p,col.k])} style={{accentColor:C.accent}}/>{col.l}{col.d&&<span style={{fontSize:8.5,padding:"1px 4px",borderRadius:3,background:C.greenSoft,color:C.green,fontWeight:600}}>default</span>}</label>))}</div>}
+      </div>
+    </div>
+    {/* Table + drawer */}
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"10px 0 0 10px":"10px",border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <table style={{width:"100%",minWidth:cols.reduce((s,c)=>s+c.w,0)}}>
+          <thead><tr>{cols.map(col=>(<th key={col.k} onClick={()=>hS(col.k)} style={{position:"sticky",top:0,zIndex:10,padding:"8px 11px",textAlign:"left",whiteSpace:"nowrap",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:10,fontWeight:700,color:sC===col.k?C.accent:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:MN,cursor:"pointer",userSelect:"none",width:col.w}}>{col.l}{sC===col.k&&<span style={{marginLeft:4,fontSize:8}}>{sD==="asc"?"\u25B2":"\u25BC"}</span>}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={cols.length} style={{padding:36,textAlign:"center",color:C.muted}}>No assets match the current search or status filter.</td></tr>}
+            {pageData.map((a,i)=>(<tr key={a.id} onClick={()=>setSel(sel===a.id?null:a.id)} style={{cursor:"pointer"}}>{cols.map(col=>(<td key={col.k} style={{padding:"7px 11px",borderBottom:`1px solid ${C.borderLight}`,background:sel===a.id?C.accentSoft:i%2===0?C.surface:C.panel,whiteSpace:"nowrap",verticalAlign:"middle"}}>{regCell(a,col.k)}</td>))}</tr>))}
+          </tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:390,flexShrink:0,background:C.surface,borderRadius:"0 10px 10px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:15,color:C.accent,fontWeight:700}}>{det.tag}</span><div style={{fontSize:14,fontWeight:600,marginTop:3}}>{det.model}</div><div style={{marginTop:6}}><RStChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:26,height:26,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>CREATE CASE</div>
+          {false&&<>
+          {det.status==="assigned"&&<><button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh for ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†»"} Create Refresh Case</button><button onClick={()=>{setCasePrefill({type:"offboarding",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Offboarding: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"âž–"} Create Offboard Case</button><button onClick={()=>{setCasePrefill({type:"return_case",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Return: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†©"} Create Return Case</button></>}
+          {det.status==="repair"&&<button onClick={()=>{setCasePrefill({type:"break_fix",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Break-Fix: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"\u2692"} Create Break-Fix Case</button>}
+          {["pending_refresh","refresh_scheduled"].includes(det.status)&&<button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh: ${det.model} (${det.tag}). Status: ${det.status}`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†»"} Create Refresh Case</button>}
+          <button onClick={()=>{setCasePrefill({type:"break_fix",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>{"â˜·"} New Case</button>
+          </>}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {caseCreateActions.map(action=>{
+              const blocked=hasActiveCaseOfType(action.type);
+              return (
+                <button key={action.type} onClick={()=>openCreateCaseFromAsset(action.type)} disabled={blocked} title={blocked?action.hint:""} style={{...drawerActionBtn,...action.style,opacity:blocked?0.55:1,cursor:blocked?"not-allowed":"pointer"}}>
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+          {activeLinkedCases.length>0&&<div style={{fontSize:10.5,color:C.muted,marginTop:8}}>
+            Existing active linked cases: {activeLinkedCases.map(cs=>CASE_TYPES[cs.type]?.l||cs.type).join(", ")}
+          </div>}
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>LIFECYCLE ACTIONS</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            <button onClick={markInStock} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark In Stock</button>
+            <button onClick={markAssigned} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Assigned</button>
+            <button onClick={markPendingReturn} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Pending Return</button>
+            <button onClick={markInRepair} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark In Repair</button>
+            <button onClick={markRetired} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.grayBorder}`,background:C.graySoft,color:C.gray,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Retired</button>
+            <button onClick={reserveForRefresh} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Reserve for Refresh</button>
+            {det.reservation&&<button onClick={clearReservation} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Clear Reservation</button>}
+          </div>
+          {["assigned","inventory","reserved"].includes(det.status)&&<div style={{marginTop:10}}>
+            <div style={{fontSize:10,color:C.muted,marginBottom:6}}>Assignment details are used when marking this asset assigned or updating the current assignment.</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6}}>
+              <input value={assignmentDraft.user} onChange={e=>setAssignmentDraft(p=>({...p,user:e.target.value}))} placeholder="Assigned user" style={fieldInp}/>
+              <input value={assignmentDraft.office} onChange={e=>setAssignmentDraft(p=>({...p,office:e.target.value}))} placeholder="Office / location" style={fieldInp}/>
+              <input value={assignmentDraft.dept} onChange={e=>setAssignmentDraft(p=>({...p,dept:e.target.value}))} placeholder="Department" style={fieldInp}/>
+            </div>
+            {det.status==="assigned"&&<div style={{display:"flex",gap:6,marginTop:8}}>
+              <button onClick={saveAssignedDetails} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Save Assignment Details</button>
+            </div>}
+          </div>}
+        </div>
+        <div style={{padding:"10px 18px"}}>{[["Asset Tag",det.tag],["Serial",det.sn],["Model",det.model],["Category",det.cat],["Assigned User",det.user],["Department",det.dept],["Office",det.office],["Reservation",det.reservation?.label||"\u2014"],["Purchase Date",det.pd],["Age",det.age],["Warranty Exp.",det.we],["Lease End",det.le],["Condition",det.cond],["Cost","$"+det.cost.toLocaleString()],["Cost Center",det.cc],["Vendor",det.vendor],["PO Number",det.po],["Compliance",det.intune],["Last Seen",det.seen],["Refresh Eligible",det.rf?"Yes":"No"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5,color:C.muted}}>{l}</span><span style={{fontSize:11.5,color:v==="\u2014"?C.light:C.text,fontWeight:500,fontFamily:["Asset Tag","Serial","PO Number","Cost Center","Cost","Last Seen","Purchase Date","Warranty Exp.","Lease End","Age"].includes(l)?MN:SN,textAlign:"right",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
+        {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:12,color:C.sub,lineHeight:1.5}}>{det.notes}</div></div>}
+        {/* â”€â”€ LINKED CASES (bidirectional) â”€â”€ */}
+        {linkedCases.length>0&&(()=>{const openLinked=linkedCases.filter(cs=>!CLOSED_CASE_STATUSES.includes(cs.status));return (<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>LINKED CASES ({linkedCases.length})</div><div style={{fontSize:10.5,color:C.sub,marginBottom:6}}>Active linked cases: <strong style={{color:C.text}}>{openLinked.length}</strong></div>{linkedCases.map(cs=>(<div key={cs.id} onClick={()=>{if(onOpenCase){onOpenCase(cs.id);}else{go("cases.all");}setToast(`Opening ${cs.id}`);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}}><div><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{cs.id}</span><span style={{fontSize:10,color:C.muted,marginLeft:6}}>{CASE_TYPES[cs.type]?.l}</span></div><CSChip s={cs.status}/></div>))}</div>);})()}
+        <div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>ASSET ACTIVITY ({assetTimeline.length})</div>
+          {assetTimeline.length===0?<div style={{fontSize:11,color:C.muted}}>No activity recorded for this asset yet.</div>:<div style={{position:"relative",paddingLeft:14}}><div style={{position:"absolute",left:4,top:5,bottom:5,width:1.5,background:C.borderLight}}/>{assetTimeline.map((entry,i)=>(<div key={entry.id} style={{position:"relative",marginBottom:12}}><div style={{position:"absolute",left:-11.5,top:4,width:7,height:7,borderRadius:"50%",background:i===0?C.accent:C.border,border:`1.5px solid ${i===0?C.accent:C.borderHeavy}`}}/><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN}}>{entry.ts}</div><div style={{fontSize:12,fontWeight:500,color:C.text,marginTop:1}}>{entry.label}</div>{entry.detail&&<div style={{fontSize:10.5,color:C.sub,marginTop:2}}>{entry.detail}</div>}<div style={{fontSize:10.5,color:C.muted,fontStyle:"italic"}}>by {entry.by||"Current User"}</div></div>))}</div>}
+        </div>
+      </div>)}
+    </div>
+    <div style={{marginTop:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:12,color:C.muted}}>Showing <strong style={{color:C.text}}>{pageData.length.toLocaleString()}</strong> of {filt.length.toLocaleString()} ({assets.length.toLocaleString()} total){stF!=="all"&&<span> {"\u00B7"} <strong style={{color:REG_ST[stF]?.c}}>{REG_ST[stF]?.l}</strong></span>}</div><div style={{display:"flex",gap:4,alignItems:"center"}}>{filt.length>PAGE_SIZE&&<><button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:C.surface,color:page===0?C.muted:C.text,fontSize:10,cursor:page===0?"default":"pointer"}}>{"\u2190"}</button><span style={{fontSize:10,fontFamily:MN,color:C.muted}}>Pg {page+1}/{totalPages}</span><button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={page>=totalPages-1} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:C.surface,color:page>=totalPages-1?C.muted:C.text,fontSize:10,cursor:page>=totalPages-1?"default":"pointer"}}>{"\u2192"}</button></>}</div></div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WAVE PLANNER MODULE (from 2026_Refresh_Plan_Enhanced_v4.xlsx) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const WAVES=[
+  {id:"W-PTC",ofc:"Charlotte, NC (PTC)",code:"PTC",method:"IT Asset Team",q1:7,q2:48,q3:87,q4:64,gb16:32,total:238,q3v:"Rolling",q4v:"Rolling",contacted:37,status:"active",tech:"Micah Harris / Anthony Cousin",risk:null},
+  {id:"W-ATL",ofc:"Atlanta, GA (ATL)",code:"ATL",method:"Combined Visit",q1:2,q2:10,q3:102,q4:45,gb16:24,total:183,q3v:"May 1, 2026",q4v:"Sep 1, 2026",contacted:9,status:"planning",tech:"Micah Harris",risk:"Largest travel wave \u2014 126 Q3 users need single trip"},
+  {id:"W-CHI",ofc:"Chicago, IL (CHI)",code:"CHI",method:"Combined Visit",q1:1,q2:7,q3:66,q4:23,gb16:32,total:129,q3v:"Apr 2026",q4v:"Jun 2026",contacted:5,status:"planning",tech:"Anthony Cousin",risk:"32 additional 16GB devices \u2014 inventory staging needed"},
+  {id:"W-CC3",ofc:"Charlotte, NC (CC3)",code:"CC3",method:"Local IT Support",q1:2,q2:23,q3:45,q4:30,gb16:9,total:109,q3v:"Rolling",q4v:"Rolling",contacted:20,status:"active",tech:"Jakob Null",risk:null},
+  {id:"W-NKT",ofc:"N. Kingstown, RI (NKT)",code:"NKT",method:"Combined Visit",q1:0,q2:6,q3:39,q4:13,gb16:11,total:69,q3v:"May 2026",q4v:"May 2026",contacted:6,status:"planning",tech:"TBD",risk:"No technician assigned yet"},
+  {id:"W-SCO",ofc:"Scottsdale, AZ (SCO)",code:"SCO",method:"Combined Visit",q1:0,q2:2,q3:4,q4:47,gb16:12,total:65,q3v:"Oct 2026",q4v:"Oct 2026",contacted:2,status:"planning",tech:"TBD",risk:"Q4-heavy \u2014 47 users in single quarter"},
+  {id:"W-BHM",ofc:"Birmingham, AL (BHM)",code:"BHM",method:"Combined Visit",q1:0,q2:1,q3:13,q4:29,gb16:4,total:47,q3v:"Sep 2026",q4v:"Sep 2026",contacted:1,status:"planning",tech:"TBD",risk:null},
+  {id:"W-NYC",ofc:"New York, NY (NYC)",code:"NYC",method:"Combined Visit",q1:0,q2:1,q3:20,q4:12,gb16:13,total:46,q3v:"Jun 2026",q4v:"Jun 2026",contacted:1,status:"planning",tech:"TBD",risk:"13 additional 16GB devices"},
+  {id:"W-ESD",ofc:"El Segundo, CA (ESD)",code:"ESD",method:"Local IT Support",q1:0,q2:4,q3:14,q4:15,gb16:7,total:40,q3v:"Rolling",q4v:"Rolling",contacted:4,status:"active",tech:"ESD Local IT",risk:null},
+  {id:"W-WPB",ofc:"W. Palm Beach, FL (WPB)",code:"WPB",method:"IT Asset Team",q1:0,q2:8,q3:4,q4:14,gb16:14,total:40,q3v:"Sep 2026",q4v:"Sep 2026",contacted:2,status:"planning",tech:"TBD",risk:"14 extra 16GB devices \u2014 inventory check needed"},
+  {id:"W-PSM",ofc:"Portsmouth, NH (PSM)",code:"PSM",method:"IT Asset Team",q1:0,q2:0,q3:5,q4:4,gb16:31,total:40,q3v:"May 2026",q4v:"May 2026",contacted:0,status:"planning",tech:"TBD",risk:"31 additional 16GB \u2014 largest 16GB wave"},
+  {id:"W-WDH",ofc:"Woodland Hills, CA (WDH)",code:"WDH",method:"Local IT Support",q1:0,q2:5,q3:7,q4:11,gb16:16,total:39,q3v:"Rolling",q4v:"Rolling",contacted:1,status:"active",tech:"WDH Local IT",risk:null},
+  {id:"W-DAL",ofc:"Dallas, TX (DAL)",code:"DAL",method:"Local IT Support",q1:0,q2:10,q3:11,q4:7,gb16:10,total:38,q3v:"Rolling",q4v:"Rolling",contacted:9,status:"active",tech:"DAL Local IT",risk:null},
+  {id:"W-FAR",ofc:"Farmington, CT (FAR)",code:"FAR",method:"IT Asset Team",q1:0,q2:7,q3:20,q4:1,gb16:2,total:30,q3v:"May 2026",q4v:"May 2026",contacted:5,status:"planning",tech:"Micah Harris",risk:null},
+  {id:"W-EDI",ofc:"Edison, NJ (EDI)",code:"EDI",method:"Local IT Support",q1:0,q2:1,q3:12,q4:9,gb16:7,total:29,q3v:"Rolling",q4v:"Rolling",contacted:1,status:"active",tech:"EDI Local IT",risk:null},
+  {id:"W-WND",ofc:"Windsor, CT (WND)",code:"WND",method:"IT Asset Team",q1:0,q2:3,q3:0,q4:23,gb16:1,total:27,q3v:"Oct 2026",q4v:"Oct 2026",contacted:2,status:"planning",tech:"TBD",risk:"Q4-heavy \u2014 23 users concentrated"},
+  {id:"W-IVN",ofc:"Irvine, CA (IVN)",code:"IVN",method:"Local IT Support",q1:1,q2:2,q3:10,q4:6,gb16:7,total:26,q3v:"Rolling",q4v:"Rolling",contacted:2,status:"active",tech:"IVN Local IT",risk:null},
+  {id:"W-FRK",ofc:"Franklin, TN (FRK)",code:"FRK",method:"IT Asset Team",q1:0,q2:4,q3:6,q4:6,gb16:9,total:25,q3v:"Oct 2026",q4v:"Oct 2026",contacted:1,status:"planning",tech:"TBD",risk:null},
+  {id:"W-CPH",ofc:"Camp Hill, PA (CPH)",code:"CPH",method:"IT Asset Team",q1:1,q2:0,q3:17,q4:4,gb16:1,total:23,q3v:"Jun 2026",q4v:"Jun 2026",contacted:0,status:"planning",tech:"TBD",risk:null},
+  {id:"W-JAX",ofc:"Jacksonville, FL (JAX)",code:"JAX",method:"Combined Visit",q1:0,q2:4,q3:5,q4:6,gb16:8,total:23,q3v:"Sep 2026",q4v:"Sep 2026",contacted:1,status:"planning",tech:"TBD",risk:null},
+  {id:"W-KNC",ofc:"Kansas City, MO (KNC)",code:"KNC",method:"IT Asset Team",q1:0,q2:1,q3:6,q4:4,gb16:12,total:23,q3v:"Jun 2026",q4v:"Jun 2026",contacted:0,status:"planning",tech:"TBD",risk:"12 extra 16GB devices"},
+  {id:"W-SEA",ofc:"Seattle, WA (SEA)",code:"SEA",method:"IT Asset Team",q1:0,q2:3,q3:6,q4:5,gb16:8,total:22,q3v:"Jun 2026",q4v:"Jun 2026",contacted:3,status:"planning",tech:"TBD",risk:null},
+];
+const WAVE_ST={planning:{l:"Planning",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},active:{l:"Active",c:C.green,bg:C.greenSoft,bd:C.greenBorder},scheduled:{l:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},completed:{l:"Completed",c:C.gray,bg:C.graySoft,bd:C.grayBorder},at_risk:{l:"At Risk",c:C.red,bg:C.redSoft,bd:C.redBorder}};
+const WvChip=({s})=>{const x=WAVE_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+
+function WavePlannerModule({setToast,go}){
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+
+  const totalUsers=useMemo(()=>WAVES.reduce((a,w)=>a+w.total,0),[]);
+  const atRisk=useMemo(()=>WAVES.filter(w=>w.risk),[]);
+  const stCounts=useMemo(()=>{const c={};WAVES.forEach(w=>{c[w.status]=(c[w.status]||0)+1;});return c;},[]);
+  const filt=useMemo(()=>stF==="all"?WAVES:stF==="at_risk"?atRisk:WAVES.filter(w=>w.status===stF),[stF,atRisk]);
+  const det=sel?WAVES.find(w=>w.id===sel):null;
+
+  // Compute completion % from contacted / total
+  const pct=(w)=>{if(!w.total)return 0;return Math.round((w.contacted/w.total)*100);};
+
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Waves" value={WAVES.length} sub={`${WAVES.length} offices`} color={C.accent}/>
+      <Kpi label="Total Users" value={totalUsers.toLocaleString()} sub="Across all waves"/>
+      <Kpi label="Active" value={stCounts.active||0} color={C.green} onClick={()=>setStF("active")}/>
+      <Kpi label="Planning" value={stCounts.planning||0} color={C.amber} onClick={()=>setStF("planning")}/>
+      <Kpi label="At Risk" value={atRisk.length} sub="Have blockers" color={C.red} alert={atRisk.length>0} onClick={()=>setStF("at_risk")}/>
+      <Kpi label="Q3 Devices" value={WAVES.reduce((a,w)=>a+w.q3+w.gb16,0).toLocaleString()} sub="Peak quarter" color={C.orange}/>
+    </div>
+
+    {/* Risk alerts */}
+    {atRisk.length>0&&stF!=="at_risk"&&(<div style={{background:C.redSoft,border:`1px solid ${C.redBorder}`,borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6}}>Wave Risks / Blockers ({atRisk.length})</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{atRisk.map(w=>(<span key={w.id} onClick={()=>setSel(w.id)} style={{fontSize:10.5,padding:"3px 8px",borderRadius:4,background:C.surface,border:`1px solid ${C.redBorder}40`,cursor:"pointer"}}><strong style={{color:C.red}}>{w.code}</strong> <span style={{color:C.sub}}>{w.risk?.slice(0,50)}</span></span>))}</div>
+    </div>)}
+
+    {/* Filters */}
+    <div style={{display:"flex",gap:4,marginBottom:10}}>
+      {[["all","All",WAVES.length],["active","Active",stCounts.active||0],["planning","Planning",stCounts.planning||0],["at_risk","At Risk",atRisk.length]].map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+    </div>
+
+    {/* Table + Drawer */}
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 340px)"}}>
+        <table style={{width:"100%",minWidth:1050}}>
+          <thead><tr>{[{l:"Wave",w:65},{l:"Office",w:180},{l:"Method",w:120},{l:"Q2",w:40},{l:"Q3",w:40},{l:"Q4",w:40},{l:"16GB",w:45},{l:"Total",w:55},{l:"Contacted",w:70},{l:"Progress",w:100},{l:"Status",w:90},{l:"Tech",w:120},{l:"Q3 Visit",w:90}].map(h=>(<th key={h.l} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap",width:h.w}}>{h.l}</th>))}</tr></thead>
+          <tbody>{filt.map((w,ri)=>{const p=pct(w);const pc=p>30?C.green:p>0?C.amber:C.gray;return (
+            <tr key={w.id} onClick={()=>setSel(sel===w.id?null:w.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{w.code}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{w.ofc}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:w.method==="Combined Visit"?C.purpleSoft:w.method==="Local IT Support"?C.cyanSoft:C.greenSoft,color:w.method==="Combined Visit"?C.purple:w.method==="Local IT Support"?C.cyan:C.green,fontWeight:600,fontFamily:MN}}>{w.method==="IT Asset Team"?"IT Team":w.method==="Local IT Support"?"Local IT":"Combined"}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,color:w.q2?C.text:C.light,textAlign:"center"}}>{w.q2||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,color:w.q3?C.text:C.light,textAlign:"center",fontWeight:w.q3>20?700:400}}>{w.q3||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,color:w.q4?C.text:C.light,textAlign:"center"}}>{w.q4||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,color:w.gb16?C.amber:C.light,textAlign:"center"}}>{w.gb16||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:12,fontWeight:700,color:C.text,textAlign:"center"}}>{w.total}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,textAlign:"center",color:w.contacted?C.accent:C.light}}>{w.contacted||0}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}>
+                <div style={{display:"flex",alignItems:"center",gap:5}}><div style={{flex:1,height:5,background:C.bg,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${p}%`,background:pc,borderRadius:3}}/></div><span style={{fontFamily:MN,fontSize:9.5,color:pc,fontWeight:600,width:28,textAlign:"right"}}>{p}%</span></div>
+              </td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}>{w.risk?<WvChip s="at_risk"/>:<WvChip s={w.status}/>}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:w.tech==="TBD"?C.red:C.sub}}>{w.tech}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===w.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{w.q3v}</td>
+            </tr>);})}</tbody>
+        </table>
+      </div>
+
+      {/* Detail drawer */}
+      {det&&(<div style={{width:380,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div><span style={{fontFamily:MN,fontSize:15,color:C.accent,fontWeight:700}}>{det.code}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.ofc}</div><div style={{marginTop:5,display:"flex",gap:5}}>{det.risk?<WvChip s="at_risk"/>:<WvChip s={det.status}/>}<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:det.method==="Combined Visit"?C.purpleSoft:det.method==="Local IT Support"?C.cyanSoft:C.greenSoft,color:det.method==="Combined Visit"?C.purple:det.method==="Local IT Support"?C.cyan:C.green,fontWeight:600,fontFamily:MN}}>{det.method}</span></div></div>
+            <button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button>
+          </div>
+        </div>
+        {/* Actions */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+          {det.status==="planning"&&<button onClick={()=>setToast(`${det.code} scheduled`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Schedule Visit</button>}
+          {det.tech==="TBD"&&<button onClick={()=>setToast(`Assign tech for ${det.code}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Assign Technician</button>}
+          <button onClick={()=>{setToast(`Opening ${det.code} cases in Refresh Queue`);if(go)go("refresh.queue");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>View Refresh Cases</button>
+          <button onClick={()=>{setToast(`Opening inventory for ${det.code}`);if(go)go("inventory.stock");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Check Inventory</button>
+        </div>
+        {/* Wave details */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>WAVE DETAILS</div>
+          {[["Office",det.ofc],["Code",det.code],["Method",det.method],["Technician",det.tech],["Q3 Visit Date",det.q3v],["Q4 Visit Date",det.q4v],["Users Contacted",String(det.contacted)+" / "+String(det.total)],["Completion",pct(det)+"%"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Code","Q3 Visit Date","Q4 Visit Date","Users Contacted","Completion"].includes(l)?MN:SN,color:l==="Technician"&&v==="TBD"?C.red:C.text}}>{v}</span></div>))}
+        </div>
+        {/* Quarter breakdown */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>QUARTERLY BREAKDOWN</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:4,textAlign:"center"}}>
+            {[{l:"Q1",v:det.q1,c:C.muted},{l:"Q2",v:det.q2,c:C.accent},{l:"Q3",v:det.q3,c:C.orange},{l:"Q4",v:det.q4,c:C.purple},{l:"16GB",v:det.gb16,c:C.amber}].map(m=>(<div key={m.l}><div style={{fontSize:16,fontWeight:700,color:m.v?m.c:C.light,fontFamily:SN}}>{m.v||0}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}
+          </div>
+        </div>
+        {/* Inventory demand */}
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>INVENTORY DEMAND (est.)</div>
+          {[{l:"Laptops",v:det.q3+det.q4+det.gb16,c:C.green},{l:"Docks",v:det.q3+det.q4+det.gb16,c:C.purple},{l:"Monitors",v:Math.round((det.q3+det.q4+det.gb16)*0.7),c:C.cyan},{l:"Headsets",v:Math.round((det.q3+det.q4+det.gb16)*0.5),c:C.sub}].map((m,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{m.l}</span><span style={{fontSize:12,fontWeight:700,color:m.c,fontFamily:MN}}>{m.v}</span></div>))}
+        </div>
+        {/* Risk */}
+        {det.risk&&(<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.red,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>RISK / BLOCKER</div>
+          <div style={{padding:"8px 10px",background:C.redSoft,borderRadius:5,border:`1px solid ${C.redBorder}40`,fontSize:11.5,color:C.red,lineHeight:1.5}}>{det.risk}</div>
+        </div>)}
+        {/* Associated refresh cases (simulated) */}
+        <div style={{padding:"10px 18px"}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>REFRESH CASES IN WAVE</div>
+          {CASES.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).length>0?
+            CASES.filter(c=>c.office.includes(det.code)||c.wave?.includes(det.code)).map(c=>(<div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}} onClick={()=>{setToast(`Opening ${c.id}`);if(go)go("refresh.queue");}}>
+              <div><span style={{fontFamily:MN,color:C.accent,fontWeight:600,fontSize:10.5,marginRight:5}}>{c.id}</span><span style={{fontSize:11.5}}>{c.user}</span></div>
+              <RfChip s={c.status}/>
+            </div>))
+          :<div style={{fontSize:11.5,color:C.muted,fontStyle:"italic"}}>Cases will appear here as refresh planning progresses for this office. {det.total} users planned.</div>}
+        </div>
+      </div>)}
+    </div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PROCUREMENT MODULE (from SHI_Sales_Jan_-_Feb.xlsx — line-level) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// POs grouped from 978 SHI Sell Thru Detail lines. Status: INVOICEDÃ¢â€ â€™received, OPEN ORDERÃ¢â€ â€™open, RETURNEDÃ¢â€ â€™returned
+const PO_ST={open:{l:"Open",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},received:{l:"Received",c:C.green,bg:C.greenSoft,bd:C.greenBorder},returned:{l:"Returned",c:C.red,bg:C.redSoft,bd:C.redBorder}};
+const PoChip=({s})=>{const x=PO_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
+
+// Real POs from SHI Sell Thru Detail, top by spend + all open orders
+const RAW_PO=[
+  {on:"S62379113",dt:"2026-01-26",po:"RG4GST-COHM365-12626",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Cohesity",prod:"M365 Cloud Protection (1 User) 1yr",part:"DPAAS-O365-P",qty:7500,unit:67.5,ext:506250},{mfr:"Cohesity",prod:"M365 Cloud Protection (1 User) 1yr Renewal",part:"DPAAS-O365-R",qty:2400,unit:67.5,ext:162000},{mfr:"Cohesity",prod:"M365 TAM Service",part:"TAM-SVC",qty:2,unit:10125,ext:20250}]},
+  {on:"S62487085",dt:"2026-02-18",po:"423-700402",st:"received",city:"Charlotte",state:"NC",cc:"423-700402",items:[{mfr:"Citrix Systems",prod:"ShareFile Premium \u2014 1yr term",part:"SHP-1Y",qty:1000,unit:286,ext:286000}]},
+  {on:"S62453270",dt:"2026-02-17",po:"1141500.7",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 Premium PA14250 / U7 268V / 32GB",part:"PA14250",qty:150,unit:1765,ext:264750},{mfr:"SHI CONFIG",prod:"Amwins AP Pre-Provisioning",part:"51026922",qty:150,unit:10,ext:1500}]},
+  {on:"LS00291085",dt:"2026-02-20",po:"RG4GST-CHLT720-22026",st:"open",city:"Cheltenham",state:"UK",cc:"GST-INTL",items:[{mfr:"Arista Networks",prod:"10GBASE-CR SFP Twinax Cable 0.5M",part:"CAB-SFP-SFP-0.5M",qty:16,unit:42.48,ext:680},{mfr:"Arista Networks",prod:"SFP+ 10GbE Transceiver",part:"SFP-10G-SR-P",qty:4,unit:103.55,ext:414},{mfr:"Arista Networks",prod:"10GBASE-CR SFP Copper Cable 3M",part:"CAB-SFP-SFP-3M",qty:2,unit:67.44,ext:135},{mfr:"Arista Networks",prod:"7050X3 48x25G SFP + 8x100G Switch",part:"DCS-7050CX3",qty:2,unit:60614,ext:121228},{mfr:"Arista Networks",prod:"7050X3 Next Day Support 1yr",part:"SVC-7050CX3",qty:2,unit:6058.68,ext:12117},{mfr:"Arista Networks",prod:"Arista 100G QSFP28 Transceiver",part:"QSFP-100G-SR4",qty:16,unit:1969.08,ext:31505}]},
+  {on:"S62379132",dt:"2026-01-26",po:"RG4GST-ARSSTOK-12626",st:"received",city:"Charlotte",state:"NC",cc:"GST-NTWK",items:[{mfr:"Arista Networks",prod:"7050X3 48x25G SFP Switch",part:"DCS-7050CX3-48",qty:2,unit:55680,ext:111360},{mfr:"Arista Networks",prod:"Arista 100G QSFP28 SR4 Transceiver",part:"QSFP-100G-SR4",qty:16,unit:1969,ext:31504},{mfr:"Arista Networks",prod:"Next Day Support 1yr",part:"SVC-ND-1Y",qty:2,unit:5582,ext:11164},{mfr:"Arista Networks",prod:"SFP+ 10G-SR Transceiver",part:"SFP-10G-SR-P",qty:4,unit:104,ext:414}]},
+  {on:"S62362791",dt:"2026-01-22",po:"MH-AMWIN-CST-INFO-1",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 Premium PA14250 / 32GB",part:"PA14250",qty:88,unit:1765,ext:155320},{mfr:"SHI CONFIG",prod:"Amwins AP Pre-Provisioning",part:"51026922",qty:88,unit:30.45,ext:2680}]},
+  {on:"S62354793",dt:"2026-01-20",po:"TD-OAKWO-DFW-010926",st:"received",city:"Plano",state:"TX",cc:"OAKWO-DFW-ADMN",items:[{mfr:"Dell",prod:"Dell Pro Max 14 MA14250 / U9 285V / 64GB",part:"MA14250",qty:55,unit:2523.26,ext:138779}]},
+  {on:"S62379180",dt:"2026-01-27",po:"RG4GST-NTNX1YR-12626",st:"received",city:"Charlotte",state:"NC",cc:"GST-INFRA",items:[{mfr:"Nutanix",prod:"Nutanix Ultimate SW Support 1yr Renewal",part:"NUT-ULT-1Y",qty:288,unit:467.55,ext:134654}]},
+  {on:"S62473422",dt:"2026-02-13",po:"RG4GST-COHTAM-21326",st:"received",city:"Charlotte",state:"NC",cc:"GST-INFRA",items:[{mfr:"Cohesity",prod:"DataProtect TAM Service Renewal",part:"TAM-SVC-R",qty:2,unit:10125,ext:20250},{mfr:"Cohesity",prod:"Cloud Protection Annual Renewal",part:"DPAAS-R",qty:1200,unit:48.54,ext:58250}]},
+  {on:"S62309584",dt:"2026-01-09",po:"MG-AMWIN-CST-INFO5",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 Premium PA14250 / 32GB",part:"PA14250",qty:27,unit:1765,ext:47655},{mfr:"SHI CONFIG",prod:"AP Pre-Provisioning",part:"51026922",qty:27,unit:25,ext:675},{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:20,unit:159.38,ext:3175}]},
+  {on:"S62358036",dt:"2026-01-21",po:"SH-AAUTO-DFW-012026",st:"received",city:"Plano",state:"TX",cc:"AAUTO-DFW",items:[{mfr:"Dell",prod:"Dell Pro 14 Premium PA14250 / 32GB",part:"PA14250",qty:16,unit:1750,ext:28000},{mfr:"SHI CONFIG",prod:"AP Pre-Provisioning",part:"51026922",qty:16,unit:25,ext:400}]},
+  {on:"S62412850",dt:"2026-02-03",po:"MGAMWIN-CST-INFO-9",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Apple",prod:"MacBook Pro 14\" M4 Pro 24GB 512GB",part:"MX3G3LL/A",qty:10,unit:2199,ext:21990},{mfr:"Apple",prod:"MacBook Pro 16\" M4 Pro 48GB 512GB",part:"MX4H3LL/A",qty:3,unit:2499,ext:7497}]},
+  {on:"S62318755",dt:"2026-01-12",po:"MH-AMWIN-CST-INFO-3",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:10,unit:1765,ext:17650},{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:5,unit:165.82,ext:829},{mfr:"Dell",prod:"Dell 24\" Monitor P2425HE w/ Dock",part:"P2425HE",qty:5,unit:155.25,ext:776}]},
+  {on:"S62302274",dt:"2026-01-08",po:"1141500.6",st:"received",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Microsoft",prod:"Surface Laptop 7 / Snapdragon X Plus / 16GB 512GB",part:"ZIF-00001",qty:64,unit:235,ext:15040}]},
+  {on:"S62476499",dt:"2026-02-17",po:"TD-OAKWO-DFW-021326",st:"received",city:"Plano",state:"TX",cc:"OAKWO-DFW-ADMN",items:[{mfr:"Backblaze",prod:"Backblaze B2 Cloud Backup 1yr",part:"B2-1Y",qty:1,unit:5988,ext:5988},{mfr:"SHI International",prod:"SHI Asset Mgmt Service",part:"SHI-AMS",qty:1,unit:1258,ext:1258}]},
+  {on:"S62475750",dt:"2026-02-18",po:"RETS-LM4LFT02132026",st:"received",city:"Lafayette",state:"CA",cc:"AWBNC-LFT",items:[{mfr:"APC",prod:"APC Smart-UPS 1500VA RM 2U LCD",part:"SMT1500RM2U",qty:2,unit:2117,ext:4234},{mfr:"APC",prod:"APC Network Mgmt Card AP9641",part:"AP9641",qty:2,unit:476,ext:952},{mfr:"SanDisk",prod:"SanDisk Ultra Fit 128GB USB 3.1",part:"SDCZ430-128G",qty:20,unit:16.5,ext:330},{mfr:"Axis Comms",prod:"AXIS P3265-LV Network Camera",part:"02327-001",qty:1,unit:1575,ext:1575}]},
+  {on:"LS00289760",dt:"2026-02-14",po:"RG4GST-DLPRCHR-21426",st:"open",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:50,unit:1765,ext:88250},{mfr:"SHI CONFIG",prod:"AP Pre-Provisioning",part:"51026922",qty:50,unit:10,ext:500}]},
+  {on:"LS00290109",dt:"2026-02-17",po:"MH-AMWIN-CST-INFO-11",st:"open",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:25,unit:1765,ext:44125},{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:25,unit:166,ext:4150},{mfr:"Dell",prod:"Dell 24\" P2425HE Monitor w/ Dock",part:"P2425HE",qty:25,unit:155,ext:3875}]},
+  {on:"LS00289432",dt:"2026-02-13",po:"RETS4MAN-APC02192026",st:"open",city:"Charlotte",state:"NC",cc:"ACCES-BED",items:[{mfr:"APC",prod:"APC Smart-UPS 1000VA RM 2U LCD",part:"SMT1000RM2U",qty:1,unit:3651,ext:3651}]},
+  {on:"LS00290440",dt:"2026-02-19",po:"JM-AAUTO-DFW-021826",st:"open",city:"Plano",state:"TX",cc:"AAUTO-DFW",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:2,unit:1672,ext:3344}]},
+  {on:"LS00290552",dt:"2026-02-20",po:"MG-AMWIN-CST-INFO-10",st:"open",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:10,unit:166,ext:1660},{mfr:"ViewSonic",prod:"ViewSonic VG2448a-2 24\" Monitor",part:"VG2448A-2",qty:5,unit:410,ext:2050}]},
+  {on:"LS00288940",dt:"2026-02-11",po:"RETS4MAN-VWSC021026",st:"open",city:"Charlotte",state:"NC",cc:"AMWIN-CST-INFO",items:[{mfr:"ViewSonic",prod:"ViewSonic VG2448a-2 24\" Monitor",part:"VG2448A-2",qty:10,unit:410,ext:4100}]},
+  {on:"LS00291200",dt:"2026-02-21",po:"RETS4CHI-02212026",st:"open",city:"Chicago",state:"IL",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:20,unit:1765,ext:35300},{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:20,unit:166,ext:3320},{mfr:"Dell",prod:"Dell 24\" P2425HE Monitor",part:"P2425HE",qty:20,unit:155,ext:3100},{mfr:"SHI CONFIG",prod:"AP Pre-Provisioning",part:"51026922",qty:20,unit:10,ext:200}]},
+  {on:"LS00291350",dt:"2026-02-24",po:"RETS4ATL-02242026",st:"open",city:"Atlanta",state:"GA",cc:"AMWIN-CST-INFO",items:[{mfr:"Dell",prod:"Dell Pro 14 PA14250 / 32GB",part:"PA14250",qty:30,unit:1765,ext:52950},{mfr:"Dell",prod:"Dell Pro Dock WD25",part:"WD25",qty:30,unit:166,ext:4980},{mfr:"SHI CONFIG",prod:"AP Pre-Provisioning",part:"51026922",qty:30,unit:10,ext:300}]},
+];
+
+const CITY_WAVE={"Charlotte":"W-PTC","Atlanta":"W-ATL","Chicago":"W-CHI","Plano":"W-DAL","Scottsdale":"W-SCO","Birmingham":"W-BHM","Lafayette":"W-IVN","Metairie":"W-MET","Kansas City":"W-KNC","Jacksonville":"W-JAX","Mobile":"W-MOB","Seattle":"W-SEA","Cheltenham":null};
+
+function ProcurementModule({setToast,go}){
+  const [sel,setSel]=useState(null);
+  const [stF,setStF]=useState("all");
+  const [vendF,setVendF]=useState("all");
+  const [search,setSearch]=useState("");
+
+  const pos=useMemo(()=>RAW_PO.map(o=>{
+    const totalAmt=o.items.reduce((a,i)=>a+i.ext,0);
+    const totalQty=o.items.reduce((a,i)=>a+i.qty,0);
+    const mfrs=[...new Set(o.items.map(i=>i.mfr))].filter(m=>!m.startsWith("SHI "));
+    const loc=o.city+(o.state?", "+o.state:"");
+    const wave=CITY_WAVE[o.city]||null;
+    return {...o,totalAmt,totalQty,mfrs,loc,wave,lineCount:o.items.length};
+  }),[]);
+
+  const totalSpend=useMemo(()=>pos.reduce((a,p)=>a+p.totalAmt,0),[pos]);
+  const totalLines=useMemo(()=>pos.reduce((a,p)=>a+p.lineCount,0),[pos]);
+  const stCounts=useMemo(()=>{const c={};pos.forEach(p=>{c[p.st]=(c[p.st]||0)+1;});return c;},[pos]);
+  const vendorSpend=useMemo(()=>{const vs={};pos.forEach(p=>p.items.forEach(i=>{const m=i.mfr;if(!vs[m])vs[m]={spend:0,units:0};vs[m].spend+=i.ext;vs[m].units+=i.qty;}));return Object.entries(vs).sort((a,b)=>b[1].spend-a[1].spend);},[pos]);
+  const topVendor=vendorSpend.length>0?vendorSpend[0]:["",{spend:0}];
+
+  const filt=useMemo(()=>{let l=pos;if(stF!=="all")l=l.filter(p=>p.st===stF);if(vendF!=="all")l=l.filter(p=>p.mfrs.includes(vendF)||p.items.some(i=>i.mfr===vendF));if(search.trim()){const q=search.toLowerCase();l=l.filter(p=>p.on.toLowerCase().includes(q)||p.po.toLowerCase().includes(q)||p.loc.toLowerCase().includes(q)||p.cc.toLowerCase().includes(q)||p.items.some(i=>i.prod.toLowerCase().includes(q)||i.mfr.toLowerCase().includes(q)));}return l;},[pos,stF,vendF,search]);
+  const det=sel?pos.find(p=>p.on===sel):null;
+
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Spend" value={"$"+(totalSpend/1e6).toFixed(2)+"M"} sub="Jan\u2013Feb 2026 (SHI)" color={C.accent}/>
+      <Kpi label="Purchase Orders" value={pos.length} sub={`${totalLines} line items`}/>
+      <Kpi label="Open Orders" value={stCounts.open||0} color={C.amber} onClick={()=>setStF("open")}/>
+      <Kpi label="Received" value={stCounts.received||0} color={C.green} onClick={()=>setStF("received")}/>
+      <Kpi label="Top Vendor" value={topVendor[0]} sub={"$"+(topVendor[1].spend/1e3).toFixed(0)+"K"} color={C.purple}/>
+      <Kpi label="IT Hardware" value={pos.filter(p=>p.items.some(i=>["Dell","Apple","Microsoft"].includes(i.mfr))).length+" POs"} sub="Refresh-related" color={C.cyan}/>
+    </div>
+
+    <div style={{background:C.surface,borderRadius:8,padding:"10px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:14}}>
+      <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>VENDOR SPEND (TOP 8)</div>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{vendorSpend.slice(0,8).map(([name,d])=>(<div key={name} onClick={()=>{setVendF(vendF===name?"all":name);setSel(null);}} style={{flex:"1 1 90px",padding:"5px 8px",borderRadius:6,background:vendF===name?C.accentSoft:C.surfaceAlt,border:`1px solid ${vendF===name?C.accentBorder:C.borderLight}`,textAlign:"center",cursor:"pointer"}}><div style={{fontSize:13,fontWeight:700,color:C.text,fontFamily:SN}}>${(d.spend/1e3).toFixed(0)}K</div><div style={{fontSize:9.5,color:C.sub,marginTop:1}}>{name}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{d.units.toLocaleString()} units</div></div>))}</div>
+    </div>
+
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="PO, vendor, product\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      {[["all","All",pos.length],["open","Open",stCounts.open||0],["received","Received",stCounts.received||0]].map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+      {vendF!=="all"&&<button onClick={()=>{setVendF("all");setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:11,fontWeight:500,cursor:"pointer"}}>{vendF} {"\u00D7"}</button>}
+    </div>
+
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 370px)"}}>
+        <table style={{width:"100%",minWidth:950}}>
+          <thead><tr>{[{l:"Order #",w:105},{l:"Date",w:85},{l:"Cust PO",w:150},{l:"Location",w:110},{l:"Vendor(s)",w:130},{l:"Lines",w:45},{l:"Qty",w:50},{l:"Total",w:95},{l:"Status",w:85},{l:"Wave",w:55},{l:"Cost Center",w:110}].map(h=>(<th key={h.l} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap",width:h.w}}>{h.l}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={11} style={{padding:28,textAlign:"center",color:C.muted}}>No orders match filters.</td></tr>}
+            {filt.map((po,ri)=>(<tr key={po.on} onClick={()=>setSel(sel===po.on?null:po.on)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{po.on}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{po.dt}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:10.5,color:C.sub,fontFamily:MN,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={po.po}>{po.po}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{po.loc}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.text}}>{po.mfrs.join(", ")}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,textAlign:"center"}}>{po.lineCount}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,textAlign:"center"}}>{po.totalQty.toLocaleString()}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,fontWeight:600}}>${po.totalAmt.toLocaleString()}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><PoChip s={po.st}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:po.wave?C.cyan:C.light}}>{po.wave?po.wave.replace("W-",""):"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===po.on?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.muted,maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={po.cc}>{po.cc||"\u2014"}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+
+      {det&&(<div style={{width:390,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 370px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.on}</span><div style={{fontSize:11,color:C.sub,marginTop:2,fontFamily:MN}}>{det.po}</div><div style={{marginTop:5,display:"flex",gap:5}}><PoChip s={det.st}/><span style={{fontSize:12,fontWeight:600,color:C.text}}>${det.totalAmt.toLocaleString()}</span></div></div>
+            <button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button>
+          </div>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+          {det.st==="open"&&<button onClick={()=>setToast(`${det.on} marked received`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Received</button>}
+          {det.wave&&<button onClick={()=>{setToast(`Opening wave ${det.wave}`);if(go)go("refresh.waves");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>View Wave</button>}
+          <button onClick={()=>{if(go)go("inventory.stock");setToast("Opening inventory");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Check Inventory</button>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          {[["Order Number",det.on],["Customer PO",det.po],["Order Date",det.dt],["Location",det.loc],["Cost Center",det.cc||"\u2014"],["Vendors",det.mfrs.join(", ")],["Total Qty",det.totalQty.toLocaleString()],["Total Amount","$"+det.totalAmt.toLocaleString()],["Linked Wave",det.wave||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Order Number","Customer PO","Order Date","Cost Center","Total Qty","Total Amount"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="Linked Wave"?C.cyan:C.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v}>{v}</span></div>))}
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>ORDER STATUS</div>
+          <div style={{display:"flex",alignItems:"center",gap:3}}>{["Ordered","Processing","Shipped","Received"].map((step,i)=>{const done=det.st==="received"?true:(i<2);return (<div key={step} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><div style={{width:"100%",height:4,borderRadius:2,background:done?C.green:C.borderLight}}/><span style={{fontSize:8,color:done?C.green:C.muted,fontFamily:MN}}>{step}</span></div>);})}</div>
+        </div>
+        <div style={{padding:"10px 18px"}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>LINE ITEMS ({det.lineCount})</div>
+          {det.items.map((it,i)=>(<div key={i} style={{padding:"8px 0",borderBottom:i<det.items.length-1?`1px solid ${C.borderLight}`:"none"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.prod}</div><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN,marginTop:2}}>{it.mfr} {"\u00B7"} {it.part} {"\u00B7"} {it.qty.toLocaleString()} @ ${it.unit.toLocaleString()}</div></div><span style={{fontSize:12,fontWeight:700,color:C.text,fontFamily:MN,flexShrink:0,marginLeft:8}}>${it.ext.toLocaleString()}</span></div>
+          </div>))}
+        </div>
+      </div>)}
+    </div>
+    <div style={{marginTop:12,display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,color:C.muted}}>Showing <strong style={{color:C.text}}>{filt.length}</strong> of {pos.length} orders{vendF!=="all"&&<span> {"\u00B7"} <strong style={{color:C.purple}}>{vendF}</strong></span>}</div><div style={{fontSize:11,color:C.muted,fontFamily:MN}}>Source: SHI Sell Thru Detail {"\u00B7"} Jan\u2013Feb 2026</div></div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AUDIT MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const AUD_TYPE={status_change:{l:"Status Change",c:C.amber,bg:C.amberSoft},assignment:{l:"Assignment",c:C.green,bg:C.greenSoft},unassignment:{l:"Unassignment",c:C.red,bg:C.redSoft},reservation:{l:"Reservation",c:C.purple,bg:C.purpleSoft},provisioning:{l:"Provisioning",c:C.orange,bg:C.orangeSoft},shipment:{l:"Shipment",c:C.accent,bg:C.accentSoft},return_received:{l:"Return Received",c:C.cyan,bg:C.cyanSoft},lease_return:{l:"Lease Return",c:C.gray,bg:C.graySoft},retirement:{l:"Retirement",c:C.gray,bg:C.graySoft},refresh_created:{l:"Refresh Created",c:C.amber,bg:C.amberSoft},compliance:{l:"Compliance",c:C.red,bg:C.redSoft},created:{l:"Asset Created",c:C.green,bg:C.greenSoft},onboarding:{l:"Onboarding",c:C.green,bg:C.greenSoft},offboarding:{l:"Offboarding",c:C.red,bg:C.redSoft},break_fix:{l:"Break-Fix",c:C.orange,bg:C.orangeSoft}};
+const AUD_SRC={ams:{l:"AMS",c:C.accent},sharepoint:{l:"SharePoint",c:C.purple},excel:{l:"Excel",c:C.green},fedex:{l:"FedEx",c:C.orange},servicenow:{l:"ServiceNow",c:C.cyan},intune:{l:"Intune",c:C.amber},itam:{l:"ITAM Platform",c:C.text},system:{l:"System",c:C.gray}};
+const EvTyp=({t})=>{const x=AUD_TYPE[t];return x?(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:x.c,background:x.bg,fontFamily:MN,whiteSpace:"nowrap"}}>{x.l}</span>):(<span style={{fontSize:10,color:C.muted}}>{t}</span>);};
+const SrcBdg=({s})=>{const x=AUD_SRC[s];return x?(<span style={{fontSize:9.5,padding:"1px 6px",borderRadius:3,fontWeight:600,color:x.c,background:x.c+"10",fontFamily:MN}}>{x.l}</span>):null;};
+
+const AUDIT_EVENTS=[
+  {id:"AE-0001",ts:"2026-03-06 09:12",asset:"LT-4821",user:"Jonathan Dinh",type:"compliance",src:"intune",by:"System",detail:"Intune check-in \u2014 Compliant. OS: Win 11 24H2, Encryption: On, Last policy sync: 09:12."},
+  {id:"AE-0002",ts:"2026-03-06 08:45",asset:"TP-2744",user:"Cara Warren",type:"status_change",src:"itam",by:"Micah Harris",detail:"Refresh case RC-2026-0020 status: Scheduled \u2192 Reserved. Replacement LT-5201 reserved from PTC inventory."},
+  {id:"AE-0003",ts:"2026-03-05 16:30",asset:"TP-2654",user:"Lynn Sailors",type:"return_received",src:"ams",by:"Warehouse Tech",detail:"Device scanned at PTC warehouse. Condition: Good. AMS updated. Asset status \u2192 Returned."},
+  {id:"AE-0004",ts:"2026-03-05 14:20",asset:"LT-5210",user:"Trisha Louque",type:"shipment",src:"fedex",by:"System",detail:"FedEx pickup confirmed. Tracking: 794644790132. Ship to: Baton Rouge, LA. ETA: Mar 11."},
+  {id:"AE-0005",ts:"2026-03-05 11:00",asset:"TY-2580",user:"Angus Gambill",type:"provisioning",src:"itam",by:"Anthony Cousin",detail:"Intune enrolled. Autopilot registered. Profile: Amwins-Standard-Win11. Temp password created."},
+  {id:"AE-0006",ts:"2026-03-04 15:45",asset:"TP-2801",user:"Sam Vives",type:"shipment",src:"fedex",by:"System",detail:"FedEx prepaid return label generated. Emailed to svives@company.com. Label ID: FX-RTN-2026-0045."},
+  {id:"AE-0007",ts:"2026-03-04 10:30",asset:"LT-5202",user:"Jordan Rosengart",type:"assignment",src:"ams",by:"Micah Harris",detail:"Asset assigned to Jordan Rosengart. AMS record updated. Previous: Inventory (unassigned). Refresh case: RC-2026-0040."},
+  {id:"AE-0008",ts:"2026-03-04 10:28",asset:"TP-2745",user:"Jordan Rosengart",type:"unassignment",src:"ams",by:"Micah Harris",detail:"Old device unassigned from Jordan Rosengart. Status \u2192 Pending Return. Refresh case: RC-2026-0040."},
+  {id:"AE-0009",ts:"2026-03-03 09:00",asset:"TP-2802",user:"Angeley Vang",type:"lease_return",src:"excel",by:"Warehouse Tech",detail:"Added to LFS batch for lease 908-0020332-000. Batch: LFS-2026-CC3-001. 4 devices in batch."},
+  {id:"AE-0010",ts:"2026-03-02 14:15",asset:"TP-2805",user:"Nicholas Prince",type:"retirement",src:"ams",by:"System",detail:"Asset retired. Deregistered from Intune/Autopilot/AD. AMS status \u2192 Retired. LFS confirmed receipt Mar 1."},
+  {id:"AE-0011",ts:"2026-03-01 11:00",asset:"SL-3847",user:"Maria Santos",type:"refresh_created",src:"system",by:"Refresh Engine",detail:"Nightly scan: lease expiry 2027-01-31 (330d). Urgency: MEDIUM. Refresh case RC-2026-0001 created. Wave: PTC Q3 2026."},
+  {id:"AE-0012",ts:"2026-03-01 08:30",asset:"TP-2651",user:"Jill Bowyer",type:"status_change",src:"sharepoint",by:"ITAM Coordinator",detail:"Follow-up required. No response since Feb 25 outreach. Manager escalation recommended. SharePoint tracker updated."},
+  {id:"AE-0013",ts:"2026-02-28 16:00",asset:"LT-5315",user:"Tyler Newton",type:"reservation",src:"itam",by:"Micah Harris",detail:"Device reserved for refresh case RC-2026-0025. Inventory \u2192 Reserved. Scheduled: May 2, 2026."},
+  {id:"AE-0014",ts:"2026-02-27 09:15",asset:"TP-2847",user:"Tocasha Garner",type:"status_change",src:"sharepoint",by:"ITAM Coordinator",detail:"Outreach email sent. Status: Pending Contact \u2192 Contacted. SharePoint refresh tracker row created."},
+  {id:"AE-0015",ts:"2026-02-26 14:00",asset:"TP-2802",user:"Angeley Vang",type:"return_received",src:"ams",by:"Jakob Null",detail:"Hand delivery at CC3. Device condition: Good. AMS check-in completed. Status \u2192 Returned."},
+  {id:"AE-0016",ts:"2026-02-25 10:00",asset:"LT-5131",user:"Angeley Vang",type:"assignment",src:"ams",by:"Jakob Null",detail:"New device deployed. Assigned to Angeley Vang. Refresh case RC-2026-0060. Method: Local IT."},
+  {id:"AE-0017",ts:"2026-02-20 13:30",asset:"LT-5220",user:"Angus Gambill",type:"reservation",src:"itam",by:"Anthony Cousin",detail:"Reserved for PTC Q2 wave. Refresh case RC-2026-0030. Inventory count decremented."},
+  {id:"AE-0018",ts:"2026-02-18 11:00",asset:"LT-5125",user:"Nicholas Prince",type:"assignment",src:"ams",by:"Jakob Null",detail:"Replacement deployed. AMS assignment created. Old device TP-2805 collected same visit."},
+  {id:"AE-0019",ts:"2026-02-15 16:45",asset:"TP-2744",user:"Cara Warren",type:"refresh_created",src:"system",by:"Refresh Engine",detail:"Nightly scan: lease 908-0020332-000 expiry 2026-05-31 (86d). Urgency: HIGH. Case RC-2026-0020 created."},
+  {id:"AE-0020",ts:"2026-02-10 09:00",asset:"LT-2918",user:"Maria Santos",type:"compliance",src:"intune",by:"System",detail:"Non-compliant. OS update overdue (42 days). Encryption: On. Last check-in: 2026-02-10. Flag raised."},
+  {id:"AE-0021",ts:"2026-02-08 08:00",asset:"LT-4620",user:"James Wright",type:"shipment",src:"fedex",by:"System",detail:"New hire shipment. FedEx tracking: 1Z999AA10789. Charlotte \u2192 Atlanta (Remote). ETA: Mar 7."},
+  {id:"AE-0022",ts:"2026-02-05 14:00",asset:"DK-0341",user:"\u2014",type:"created",src:"ams",by:"System",detail:"Asset created from PO-2025-0142. Dell WD22TB4 Dock. Status: In Stock. Location: Charlotte warehouse."},
+  {id:"AE-0023",ts:"2026-01-28 10:00",asset:"LT-4455",user:"Rachel Torres",type:"status_change",src:"servicenow",by:"Help Desk",detail:"INC0042650: User reported laptop running slow. ServiceNow ticket linked. Pending return after offboarding Mar 7."},
+  {id:"AE-0024",ts:"2026-01-15 09:30",asset:"LT-2103",user:"\u2014",type:"status_change",src:"ams",by:"ITAM Coordinator",detail:"Sent to HP Repair Depot. Screen failure. Out-of-warranty repair quoted $680. Status \u2192 In Repair."},
+  // Onboarding audit events
+  {id:"AE-0025",ts:"2026-03-06 10:15",asset:"BK33W8J25293P7",user:"Hannah Price",type:"onboarding",src:"itam",by:"Micah Harris",detail:"Onboarding session started. OB-0009. Virtual appointment. Intune enrollment initiated. Device shipped to Atlanta."},
+  {id:"AE-0026",ts:"2026-03-04 14:00",asset:"0F3G5NP25073P7",user:"Carlos Mendez",type:"onboarding",src:"itam",by:"Isaiah Gourdine",detail:"Onboarding OB-0010 follow-up. VPN config issue during session. Rescheduled for Mar 7."},
+  {id:"AE-0027",ts:"2026-02-24 09:00",asset:"0F3G1BC25073P7",user:"Brandon Mitchell",type:"onboarding",src:"itam",by:"Anthony Cousin",detail:"Walk-in onboarding completed at PTC. OB-0005. Device provisioned and handed over. Autopilot registered."},
+  // Offboarding audit events
+  {id:"AE-0028",ts:"2026-03-05 11:30",asset:"0F37PT724053FB",user:"Jessica Madero",type:"offboarding",src:"servicenow",by:"Help Desk",detail:"Offboarding OFF-0003. SCTASK0219699. Return box shipped to Scottsdale. AD account disabled."},
+  {id:"AE-0029",ts:"2026-03-01 09:00",asset:"PF4244WV",user:"Ava Jones",type:"offboarding",src:"itam",by:"ITAM Coordinator",detail:"Offboarding OFF-0004 follow-up. No response 15 days. Manager escalation sent. SCTASK0221608."},
+  {id:"AE-0030",ts:"2026-02-20 16:00",asset:"PF3F4DBR",user:"Daija Francis",type:"offboarding",src:"itam",by:"ITAM Coordinator",detail:"Offboarding OFF-0008 escalated. 365+ days. Device still unreturned. Loss assessment initiated."},
+  // Break-fix audit events
+  {id:"AE-0031",ts:"2026-03-05 15:00",asset:"BK3334323493FB",user:"Daniel Wright",type:"break_fix",src:"itam",by:"Isaiah Gourdine",detail:"Break-fix BF-0012 submitted. Surface 5 system crash. Logs being collected for MS case creation."},
+  {id:"AE-0032",ts:"2026-03-03 10:00",asset:"0F34XMP24433GT",user:"Chris Nguyen",type:"break_fix",src:"itam",by:"Isaiah Gourdine",detail:"Break-fix BF-0006. Cracked screen repair approved under Complete for Business. MS Case MS-4820225."},
+  {id:"AE-0033",ts:"2026-02-13 14:30",asset:"BK3393G25243P7",user:"Laura Chen",type:"break_fix",src:"itam",by:"Micah Harris",detail:"Break-fix BF-0016. Liquid damage (coffee). Replacement issued: BK33W4R25293P7. Old device sent to MS."},
+];
+
+function AuditModule({setToast,go,onOpenAsset,auditEvents=AUDIT_EVENTS}){
+  const [sel,setSel]=useState(null);
+  const [typeF,setTypeF]=useState("all");
+  const [srcF,setSrcF]=useState("all");
+  const [autoOnly,setAutoOnly]=useState(false);
+  const [search,setSearch]=useState("");
+
+  const typeCounts=useMemo(()=>{const c={};auditEvents.forEach(e=>{c[e.type]=(c[e.type]||0)+1;});return c;},[auditEvents]);
+  const srcCounts=useMemo(()=>{const c={};auditEvents.forEach(e=>{c[e.src]=(c[e.src]||0)+1;});return c;},[auditEvents]);
+  const autoCount=useMemo(()=>auditEvents.filter(e=>e.by==="Lifecycle Automation Engine").length,[auditEvents]);
+  const filt=useMemo(()=>{let l=auditEvents;if(typeF!=="all")l=l.filter(e=>e.type===typeF);if(srcF!=="all")l=l.filter(e=>e.src===srcF);if(autoOnly)l=l.filter(e=>e.by==="Lifecycle Automation Engine");if(search.trim()){const q=search.toLowerCase();l=l.filter(e=>e.asset.toLowerCase().includes(q)||e.user.toLowerCase().includes(q)||e.detail.toLowerCase().includes(q)||e.by.toLowerCase().includes(q));}return l;},[typeF,srcF,autoOnly,search,auditEvents]);
+  const det=sel?auditEvents.find(e=>e.id===sel):null;
+  // Asset history for selected event
+  const assetHist=det?auditEvents.filter(e=>e.asset===det.asset).sort((a,b)=>b.ts.localeCompare(a.ts)):[];
+
+  return (<>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      <Kpi label="Total Events" value={auditEvents.length} sub="Last 30 days" color={C.accent}/>
+      <Kpi label="Status Changes" value={typeCounts.status_change||0} color={C.amber} onClick={()=>setTypeF("status_change")}/>
+      <Kpi label="Assignments" value={(typeCounts.assignment||0)+(typeCounts.unassignment||0)} color={C.green} onClick={()=>setTypeF("assignment")}/>
+      <Kpi label="Shipments" value={typeCounts.shipment||0} color={C.orange} onClick={()=>setTypeF("shipment")}/>
+      <Kpi label="Returns" value={(typeCounts.return_received||0)+(typeCounts.lease_return||0)} color={C.cyan} onClick={()=>setTypeF("return_received")}/>
+      <Kpi label="Source Systems" value={Object.keys(srcCounts).length} sub="AMS, Intune, FedEx\u2026"/>
+    </div>
+    {/* Filters */}
+    <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"0 0 220px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Asset, user, detail\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
+      <div style={{width:1,height:20,background:C.border}}/>
+      <button onClick={()=>{setTypeF("all");setSrcF("all");setAutoOnly(false);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF==="all"&&srcF==="all"&&!autoOnly?C.accent:C.border}`,background:typeF==="all"&&srcF==="all"&&!autoOnly?C.accentSoft:C.surface,color:typeF==="all"&&srcF==="all"&&!autoOnly?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({auditEvents.length})</button>
+      {["status_change","assignment","shipment","return_received","provisioning","compliance","reservation","onboarding","offboarding","break_fix"].map(t=>{const n=typeCounts[t]||0;return n>0?(<button key={t} onClick={()=>{setTypeF(typeF===t?"all":t);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF===t?C.accent:C.border}`,background:typeF===t?C.accentSoft:C.surface,color:typeF===t?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{AUD_TYPE[t]?.l} ({n})</button>):null;})}
+      <div style={{width:1,height:20,background:C.border}}/>
+      {["ams","intune","fedex","servicenow","itam","system","sharepoint","excel"].map(s=>{const n=srcCounts[s]||0;return n>0?(<button key={s} onClick={()=>{setSrcF(srcF===s?"all":s);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${srcF===s?C.purple:C.border}`,background:srcF===s?C.purpleSoft:C.surface,color:srcF===s?C.purple:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{AUD_SRC[s]?.l} ({n})</button>):null;})}
+      {autoCount>0&&<button onClick={()=>{setAutoOnly(v=>!v);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${autoOnly?C.orange:C.border}`,background:autoOnly?C.orangeSoft:C.surface,color:autoOnly?C.orange:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>Automation ({autoCount})</button>}
+    </div>
+    {/* Table + Drawer */}
+    <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+      <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 340px)"}}>
+        <table style={{width:"100%",minWidth:900}}>
+          <thead><tr>{[{l:"Timestamp",w:130},{l:"Asset",w:75},{l:"User",w:120},{l:"Event Type",w:120},{l:"Source",w:80},{l:"Performed By",w:110},{l:"Detail",w:280}].map(h=>(<th key={h.l} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap",width:h.w}}>{h.l}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={7} style={{padding:28,textAlign:"center",color:C.muted}}>No audit events match.</td></tr>}
+            {filt.map((ev,ri)=>(<tr key={ev.id} onClick={()=>setSel(sel===ev.id?null:ev.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{ev.ts}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{ev.asset||"—"}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{ev.user||"—"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><EvTyp t={ev.type}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><SrcBdg s={ev.src}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{ev.by}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.detail}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {det&&(<div style={{width:390,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.asset||"—"}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user||"—"}</div><div style={{marginTop:5,display:"flex",gap:5}}><EvTyp t={det.type}/><SrcBdg s={det.src}/></div></div>
+            <button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button>
+          </div>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+          {det.asset&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(det.asset);else if(go){go("registry");setToast(`Opening ${det.asset} in Registry`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>View in Registry</button>}
+          <button onClick={()=>{if(go)go("refresh.queue");setToast("Opening Refresh Queue");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>View Refresh Cases</button>
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+          {[["Event ID",det.id],["Timestamp",det.ts],["Asset Tag",det.asset||"—"],["User",det.user||"—"],["Event Type",AUD_TYPE[det.type]?.l||det.type],["Source System",AUD_SRC[det.src]?.l||det.src],["Performed By",det.by]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Event ID","Timestamp","Asset Tag"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}
+        </div>
+        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>EVENT DETAIL</div><div style={{fontSize:12,color:C.sub,lineHeight:1.6}}>{det.detail}</div></div>
+        {/* Full asset history timeline */}
+        <div style={{padding:"10px 18px"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>FULL HISTORY FOR {det.asset||"—"} ({assetHist.length} events)</div>
+          <div style={{position:"relative",paddingLeft:12}}><div style={{position:"absolute",left:3,top:5,bottom:5,width:1.5,background:C.borderLight}}/>
+            {assetHist.map((h,i)=>(<div key={h.id} onClick={(e)=>{e.stopPropagation();setSel(h.id);}} style={{position:"relative",marginBottom:10,cursor:"pointer",padding:"2px 4px",borderRadius:4,background:h.id===det.id?C.accentSoft:"transparent"}}>
+              <div style={{position:"absolute",left:-9.5,top:3,width:6,height:6,borderRadius:"50%",background:h.id===det.id?C.accent:C.border,border:`1.5px solid ${h.id===det.id?C.accent:C.borderHeavy}`}}/>
+              <div style={{fontSize:9.5,color:C.muted,fontFamily:MN}}>{h.ts}</div>
+              <div style={{fontSize:11.5,fontWeight:500,color:C.text,marginTop:1,display:"flex",alignItems:"center",gap:5}}><EvTyp t={h.type}/><span>{h.by}</span></div>
+            </div>))}
+          </div>
+        </div>
+      </div>)}
+    </div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ADMIN MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const ADM_MODELS=[
+  {id:"M1",name:"Dell Pro 14 Premium PA14250",mfr:"Dell",type:"Laptop",ram:"32GB",storage:"512GB SSD",lifecycle:36,active:true},
+  {id:"M2",name:"Dell Pro Max 14 MA14250",mfr:"Dell",type:"Laptop",ram:"64GB",storage:"1TB SSD",lifecycle:36,active:true},
+  {id:"M3",name:"Surface Laptop 7",mfr:"Microsoft",type:"Laptop",ram:"16GB",storage:"512GB SSD",lifecycle:36,active:true},
+  {id:"M4",name:"MacBook Pro 14\" M4 Pro",mfr:"Apple",type:"Laptop",ram:"24GB",storage:"512GB SSD",lifecycle:36,active:true},
+  {id:"M5",name:"Lenovo ThinkPad T14s Gen 4",mfr:"Lenovo",type:"Laptop",ram:"32GB",storage:"512GB SSD",lifecycle:36,active:false},
+  {id:"M6",name:"Dell P2425HE 24\" Monitor",mfr:"Dell",type:"Monitor",ram:"\u2014",storage:"\u2014",lifecycle:60,active:true},
+  {id:"M7",name:"ViewSonic VG2448A 24\" Monitor",mfr:"ViewSonic",type:"Monitor",ram:"\u2014",storage:"\u2014",lifecycle:60,active:true},
+  {id:"M8",name:"Dell Pro Dock WD25",mfr:"Dell",type:"Dock",ram:"\u2014",storage:"\u2014",lifecycle:48,active:true},
+];
+const ADM_VENDORS=[
+  {id:"V1",name:"SHI International",type:"VAR",contact:"account-team@shi.com",contracts:3,active:true},
+  {id:"V2",name:"CDW",type:"VAR",contact:"amwins@cdw.com",contracts:1,active:true},
+  {id:"V3",name:"Dell Technologies",type:"OEM",contact:"dell-premier@dell.com",contracts:2,active:true},
+  {id:"V4",name:"Apple",type:"OEM",contact:"business@apple.com",contracts:1,active:true},
+  {id:"V5",name:"Lenovo",type:"OEM",contact:"lenovo-biz@lenovo.com",contracts:1,active:false},
+  {id:"V6",name:"LFS (Lease Return)",type:"Lease Vendor",contact:"returns@lfs.com",contracts:1,active:true},
+];
+const ADM_LOCATIONS=[
+  {id:"L1",code:"PTC",name:"Charlotte, NC (PTC) - Piedmont Row",type:"HQ / Warehouse",hasIT:true},
+  {id:"L2",code:"CC3",name:"Charlotte, NC (CC3) - W Tyvola",type:"Office",hasIT:true},
+  {id:"L3",code:"ATL",name:"Atlanta, GA - Peachtree Road",type:"Office",hasIT:false},
+  {id:"L4",code:"CHI",name:"Chicago, IL",type:"Office",hasIT:false},
+  {id:"L5",code:"DAL",name:"Dallas / Plano, TX",type:"Office",hasIT:true},
+  {id:"L6",code:"NYC",name:"New York, NY",type:"Office",hasIT:false},
+  {id:"L7",code:"SCO",name:"Scottsdale, AZ",type:"Office",hasIT:false},
+  {id:"L8",code:"NKT",name:"N. Kingstown, RI",type:"Office",hasIT:false},
+];
+const ADM_STATUSES=["In Stock","Reserved","Assigned","Pending Refresh","Refresh Scheduled","Pending Return","In Transit","In Repair","Returned","Retired"];
+const ADM_CARRIERS=[{name:"FedEx",type:"Primary",tracking:true},{name:"UPS",type:"Backup",tracking:true},{name:"Hand Delivery",type:"Local",tracking:false}];
+const ADM_RULES=[
+  {id:"R1",name:"Lease Expiry (\u226490d)",trigger:"lease_end - today \u2264 90",action:"Create refresh candidate (urgency: HIGH)",active:true},
+  {id:"R2",name:"Warranty Expiry (\u226490d)",trigger:"warranty_exp - today \u2264 90",action:"Create refresh candidate (urgency: HIGH)",active:true},
+  {id:"R3",name:"RAM \u226416GB",trigger:"ram_gb \u2264 16",action:"Create refresh candidate (urgency: MEDIUM)",active:true},
+  {id:"R4",name:"Age >36 months",trigger:"age > default_lifecycle_months",action:"Create refresh candidate (urgency: LOW)",active:true},
+  {id:"R5",name:"Non-compliant >30d",trigger:"intune non-compliant for 30+ days",action:"Flag asset + create ServiceNow incident",active:true},
+  {id:"R6",name:"Reservation expiry",trigger:"reservation.expires_at < NOW()",action:"Release reservation, return asset to In Stock",active:true},
+];
+const ADM_ROLES=[
+  {role:"ITAM Admin",users:2,perms:"Full access to all modules, admin settings, user management"},
+  {role:"ITAM Coordinator",users:3,perms:"Asset Registry, Refresh Ops, Inventory, Procurement (read/write)"},
+  {role:"Technician",users:4,perms:"Refresh Queue, provisioning, deployment actions"},
+  {role:"Warehouse Tech",users:2,perms:"Inventory, receiving, return processing, lease returns"},
+  {role:"Local IT",users:6,perms:"Refresh Queue (own office), deployment confirmation"},
+  {role:"Finance (Read Only)",users:5,perms:"Procurement, Asset Registry (read only), cost reports"},
+  {role:"Help Desk",users:8,perms:"Asset lookup, booking requests, ServiceNow linking"},
+];
+
+function AdminModule({setToast}){
+  const [tab,setTab]=useState("models");
+  const tabs=[{k:"models",l:"Device Models",n:ADM_MODELS.length},{k:"vendors",l:"Vendors",n:ADM_VENDORS.length},{k:"locations",l:"Locations",n:ADM_LOCATIONS.length},{k:"techs",l:"Technicians",n:TECHS.length},{k:"carriers",l:"Carriers",n:ADM_CARRIERS.length},{k:"statuses",l:"Lifecycle Statuses",n:ADM_STATUSES.length},{k:"rules",l:"Refresh Rules",n:ADM_RULES.length},{k:"roles",l:"Roles & Permissions",n:ADM_ROLES.length}];
+  const th={position:"sticky",top:0,zIndex:5,padding:"7px 10px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"};
+  const td=(ri)=>({padding:"7px 10px",borderBottom:`1px solid ${C.borderLight}`,background:ri%2===0?C.surface:C.surfaceAlt,fontSize:12});
+  const act=(v)=>v?(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.greenSoft,color:C.green,fontWeight:600}}>Active</span>):(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.graySoft,color:C.gray,fontWeight:600}}>Inactive</span>);
+
+  return (<>
+    <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap"}}>
+      {tabs.map(t=>(<button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 12px",borderRadius:6,border:`1px solid ${tab===t.k?C.accent:C.border}`,background:tab===t.k?C.accentSoft:C.surface,color:tab===t.k?C.accent:C.sub,fontSize:11.5,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>{t.l}<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:tab===t.k?C.accent+"18":C.graySoft,color:tab===t.k?C.accent:C.muted,fontFamily:MN}}>{t.n}</span></button>))}
+    </div>
+
+    <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 280px)"}}>
+      {tab==="models"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Model Name</th><th style={th}>Manufacturer</th><th style={th}>Type</th><th style={th}>RAM</th><th style={th}>Storage</th><th style={th}>Lifecycle (mo)</th><th style={th}>Status</th></tr></thead><tbody>{ADM_MODELS.map((m,i)=>(<tr key={m.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{m.id}</span></td><td style={{...td(i),fontWeight:500}}>{m.name}</td><td style={td(i)}>{m.mfr}</td><td style={td(i)}>{m.type}</td><td style={{...td(i),fontFamily:MN}}>{m.ram}</td><td style={{...td(i),fontFamily:MN}}>{m.storage}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{m.lifecycle}</td><td style={td(i)}>{act(m.active)}</td></tr>))}</tbody></table>}
+
+      {tab==="vendors"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Vendor Name</th><th style={th}>Type</th><th style={th}>Contact</th><th style={th}>Contracts</th><th style={th}>Status</th></tr></thead><tbody>{ADM_VENDORS.map((v,i)=>(<tr key={v.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{v.id}</span></td><td style={{...td(i),fontWeight:500}}>{v.name}</td><td style={td(i)}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:v.type==="VAR"?C.purpleSoft:v.type==="OEM"?C.cyanSoft:C.amberSoft,color:v.type==="VAR"?C.purple:v.type==="OEM"?C.cyan:C.amber,fontWeight:600,fontFamily:MN}}>{v.type}</span></td><td style={{...td(i),fontFamily:MN,fontSize:11,color:C.sub}}>{v.contact}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{v.contracts}</td><td style={td(i)}>{act(v.active)}</td></tr>))}</tbody></table>}
+
+      {tab==="locations"&&<table style={{width:"100%"}}><thead><tr><th style={th}>Code</th><th style={th}>Location Name</th><th style={th}>Type</th><th style={th}>Local IT</th></tr></thead><tbody>{ADM_LOCATIONS.map((l,i)=>(<tr key={l.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{l.code}</span></td><td style={{...td(i),fontWeight:500}}>{l.name}</td><td style={td(i)}>{l.type}</td><td style={td(i)}>{l.hasIT?(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.greenSoft,color:C.green,fontWeight:600}}>Yes</span>):(<span style={{fontSize:10,color:C.muted}}>No</span>)}</td></tr>))}</tbody></table>}
+
+      {tab==="techs"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Name</th><th style={th}>Role</th><th style={th}>Home Office</th><th style={th}>Travel</th><th style={th}>Capacity/Day</th><th style={th}>Avg Handle</th></tr></thead><tbody>{TECHS.map((t,i)=>(<tr key={t.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{t.id}</span></td><td style={{...td(i),fontWeight:500}}>{t.name}</td><td style={td(i)}>{t.role}</td><td style={td(i)}>{t.home}</td><td style={td(i)}>{t.travel?(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontWeight:600}}>Yes</span>):(<span style={{fontSize:10,color:C.muted}}>No</span>)}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{t.cap}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{t.avg}m</td></tr>))}</tbody></table>}
+
+      {tab==="carriers"&&<table style={{width:"100%"}}><thead><tr><th style={th}>Carrier</th><th style={th}>Type</th><th style={th}>Tracking API</th></tr></thead><tbody>{ADM_CARRIERS.map((c,i)=>(<tr key={c.name}><td style={{...td(i),fontWeight:500}}>{c.name}</td><td style={td(i)}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:c.type==="Primary"?C.greenSoft:c.type==="Backup"?C.amberSoft:C.graySoft,color:c.type==="Primary"?C.green:c.type==="Backup"?C.amber:C.gray,fontWeight:600,fontFamily:MN}}>{c.type}</span></td><td style={td(i)}>{c.tracking?(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.greenSoft,color:C.green,fontWeight:600}}>Enabled</span>):(<span style={{fontSize:10,color:C.muted}}>N/A</span>)}</td></tr>))}</tbody></table>}
+
+      {tab==="statuses"&&<table style={{width:"100%"}}><thead><tr><th style={th}>#</th><th style={th}>Status Value</th><th style={th}>Stage</th></tr></thead><tbody>{ADM_STATUSES.map((s,i)=>{const stage=i<3?"Deployment":i<6?"Refresh":i<8?"Transit":"End of Life";return (<tr key={s}><td style={{...td(i),fontFamily:MN,textAlign:"center",width:40}}>{i+1}</td><td style={{...td(i),fontWeight:500}}>{s}</td><td style={td(i)}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:stage==="Deployment"?C.greenSoft:stage==="Refresh"?C.amberSoft:stage==="Transit"?C.accentSoft:C.graySoft,color:stage==="Deployment"?C.green:stage==="Refresh"?C.amber:stage==="Transit"?C.accent:C.gray,fontWeight:600,fontFamily:MN}}>{stage}</span></td></tr>);})}</tbody></table>}
+
+      {tab==="rules"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Rule Name</th><th style={th}>Trigger Condition</th><th style={th}>Action</th><th style={th}>Status</th></tr></thead><tbody>{ADM_RULES.map((r,i)=>(<tr key={r.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{r.id}</span></td><td style={{...td(i),fontWeight:500}}>{r.name}</td><td style={{...td(i),fontFamily:MN,fontSize:11,color:C.sub}}>{r.trigger}</td><td style={{...td(i),fontSize:11,color:C.sub}}>{r.action}</td><td style={td(i)}>{act(r.active)}</td></tr>))}</tbody></table>}
+
+      {tab==="roles"&&<table style={{width:"100%"}}><thead><tr><th style={th}>Role</th><th style={th}>Users</th><th style={th}>Permissions</th></tr></thead><tbody>{ADM_ROLES.map((r,i)=>(<tr key={r.role}><td style={{...td(i),fontWeight:600}}>{r.role}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{r.users}</td><td style={{...td(i),fontSize:11,color:C.sub}}>{r.perms}</td></tr>))}</tbody></table>}
+    </div>
+  </>);
+}
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ LIFECYCLE AUTOMATION ENGINE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const AUTO_RULES=[
+  {id:"AR-001",name:"Lease Expiry Detection",trigger:"asset.lease_end - today \u2264 90 days",condition:"asset.status = 'Assigned'",action:"Set status \u2192 Lease Expiring \u2192 Create refresh candidate \u2192 Set urgency based on days remaining",schedule:"Nightly 2:00 AM UTC",src:"system",cat:"refresh",active:true,lastRun:"2026-03-06 02:00",execCount:438,lastResult:"success"},
+  {id:"AR-002",name:"Warranty Expiry Detection",trigger:"asset.warranty_exp - today \u2264 90 days",condition:"asset.status = 'Assigned' AND no active refresh case",action:"Create refresh candidate \u2192 Set urgency HIGH \u2192 Notify ITAM coordinator",schedule:"Nightly 2:00 AM UTC",src:"system",cat:"refresh",active:true,lastRun:"2026-03-06 02:00",execCount:52,lastResult:"success"},
+  {id:"AR-003",name:"RAM Threshold Refresh",trigger:"asset.ram_gb \u2264 16",condition:"asset.status = 'Assigned' AND no active refresh case",action:"Create refresh candidate \u2192 Set urgency MEDIUM \u2192 Add to 16GB wave list",schedule:"Nightly 2:00 AM UTC",src:"system",cat:"refresh",active:true,lastRun:"2026-03-06 02:00",execCount:467,lastResult:"success"},
+  {id:"AR-004",name:"Refresh Appointment \u2192 Reserve",trigger:"refresh_case.status changes to 'Scheduled'",condition:"User confirmed date AND inventory available",action:"Query inventory \u2192 Create reservation \u2192 Set asset \u2192 Reserved \u2192 Decrement inventory",schedule:"On event",src:"itam",cat:"inventory",active:true,lastRun:"2026-03-05 14:20",execCount:89,lastResult:"success"},
+  {id:"AR-005",name:"Device Provisioning Update",trigger:"Intune enrollment + Autopilot registration complete",condition:"refresh_case.status = 'Reserved'",action:"Set case \u2192 Provisioning \u2192 Log config \u2192 Create temp password \u2192 Mark provisioned",schedule:"On event (Intune webhook)",src:"intune",cat:"provisioning",active:true,lastRun:"2026-03-05 11:00",execCount:156,lastResult:"success"},
+  {id:"AR-006",name:"Shipment Creation",trigger:"FedEx tracking number logged on case",condition:"refresh_case has new_asset AND tracking \u2260 null",action:"Create shipment record \u2192 Set asset \u2192 In Transit \u2192 Set case \u2192 Shipped \u2192 Start polling",schedule:"On event",src:"fedex",cat:"shipment",active:true,lastRun:"2026-03-05 14:20",execCount:203,lastResult:"success"},
+  {id:"AR-007",name:"FedEx Delivery Confirmation",trigger:"FedEx API returns delivered status",condition:"Shipment direction = outbound AND status \u2260 delivered",action:"Update shipment \u2192 Delivered \u2192 Notify user \u2192 Advance case status",schedule:"Hourly poll",src:"fedex",cat:"shipment",active:true,lastRun:"2026-03-06 08:00",execCount:189,lastResult:"success"},
+  {id:"AR-008",name:"Warehouse Return Check-In",trigger:"Warehouse barcode scan on returned asset",condition:"asset.status = 'Pending Return'",action:"Set asset \u2192 Returned \u2192 Close assignment \u2192 Update case \u2192 Return Received",schedule:"On event (scan)",src:"ams",cat:"return",active:true,lastRun:"2026-03-05 16:30",execCount:134,lastResult:"success"},
+  {id:"AR-009",name:"AMS Check-In \u2192 Unassign",trigger:"Warehouse tech confirms AMS check-in",condition:"asset.status = 'Returned'",action:"Unassign user in AMS \u2192 Set case \u2192 Checked In \u2192 Stage for lease return",schedule:"On event",src:"ams",cat:"return",active:true,lastRun:"2026-03-03 09:00",execCount:118,lastResult:"success"},
+  {id:"AR-010",name:"Lease Vendor Return Batch",trigger:"Batch shipment to LFS confirmed",condition:"Batch has \u2265 1 checked-in device for same lease",action:"Set each asset \u2192 Retired \u2192 Deregister Intune/Autopilot/AD \u2192 Set case \u2192 Lease Return Sent",schedule:"On event (batch close)",src:"excel",cat:"retirement",active:true,lastRun:"2026-03-01 10:00",execCount:67,lastResult:"success"},
+  {id:"AR-011",name:"LFS Receipt Confirmation",trigger:"Lease vendor confirms device receipt",condition:"case.status = 'Lease Return Sent'",action:"Set case \u2192 Closed \u2192 Set is_active=false \u2192 Record disposal cert",schedule:"On event (vendor portal)",src:"system",cat:"retirement",active:true,lastRun:"2026-03-05 12:00",execCount:45,lastResult:"success"},
+  {id:"AR-012",name:"Offboarding Device Recovery",trigger:"Azure AD disable event (termination)",condition:"User has assigned assets",action:"Create FedEx return label \u2192 Email user+manager \u2192 Create device_return \u2192 Set 5d SLA",schedule:"On event (AD webhook)",src:"system",cat:"return",active:true,lastRun:"2026-03-04 15:45",execCount:23,lastResult:"success"},
+  {id:"AR-013",name:"Compliance Drift Alert",trigger:"Intune sync detects non-compliant device",condition:"compliance_status changes to Non-compliant",action:"Create ServiceNow incident \u2192 Link to refresh case \u2192 Notify asset owner",schedule:"Every 4 hours",src:"intune",cat:"compliance",active:true,lastRun:"2026-03-06 08:00",execCount:41,lastResult:"success"},
+  {id:"AR-014",name:"Low Inventory Alert",trigger:"inventory.quantity < reorder_threshold",condition:"SKU active AND not already flagged",action:"Create procurement suggestion \u2192 Notify coordinator \u2192 Flag SKU",schedule:"Every 4 hours",src:"system",cat:"inventory",active:true,lastRun:"2026-03-06 08:00",execCount:21,lastResult:"success"},
+  {id:"AR-015",name:"Reservation Auto-Expiry",trigger:"reservation.expires_at < NOW()",condition:"reservation.status = 'Active'",action:"Release reservation \u2192 Return to In Stock \u2192 Notify requester",schedule:"Hourly",src:"system",cat:"inventory",active:true,lastRun:"2026-03-06 09:00",execCount:8,lastResult:"success"},
+  {id:"AR-016",name:"Follow-Up Escalation",trigger:"refresh_case contacted >5d no response",condition:"contacted_date + 5 < today",action:"Set \u2192 Follow-Up \u2192 Reminder email \u2192 Manager at 10d \u2192 Escalate at 15d",schedule:"Daily 9:00 AM",src:"itam",cat:"refresh",active:true,lastRun:"2026-03-06 09:00",execCount:37,lastResult:"success"},
+  {id:"AR-017",name:"Onboarding Provisioning",trigger:"onboarding_case.status changes to 'Scheduled'",condition:"Device serial assigned AND Intune enrollment available",action:"Initiate Autopilot \u2192 Create user profile \u2192 Set status \u2192 In Progress \u2192 Notify technician",schedule:"On event",src:"itam",cat:"onboarding",active:true,lastRun:"2026-03-06 10:15",execCount:46,lastResult:"success"},
+  {id:"AR-018",name:"Onboarding Completion Check",trigger:"onboarding_case session ends",condition:"All provisioning steps complete",action:"Set status \u2192 Completed \u2192 Assign asset in AMS \u2192 Create audit event \u2192 Notify HR",schedule:"On event",src:"itam",cat:"onboarding",active:true,lastRun:"2026-03-06 10:45",execCount:42,lastResult:"success"},
+  {id:"AR-019",name:"Offboarding Device Recovery",trigger:"HR termination notice received",condition:"User has assigned assets in AMS",action:"Create offboarding case \u2192 Generate return label \u2192 Email user+manager \u2192 Set 5-day SLA",schedule:"On event (HR webhook)",src:"servicenow",cat:"offboarding",active:true,lastRun:"2026-03-05 11:30",execCount:91,lastResult:"success"},
+  {id:"AR-020",name:"Offboarding Follow-Up Escalation",trigger:"offboarding return SLA expired (5d)",condition:"Device not received AND no tracking movement",action:"Send follow-up \u2192 At 15d notify manager \u2192 At 30d escalate to IT director",schedule:"Daily 9:00 AM",src:"itam",cat:"offboarding",active:true,lastRun:"2026-03-06 09:00",execCount:28,lastResult:"success"},
+  {id:"AR-021",name:"Break-Fix Ticket Creation",trigger:"ServiceNow hardware incident created",condition:"Issue category = Hardware AND device under warranty",action:"Create break-fix ticket \u2192 Assign technician \u2192 Set status \u2192 Ticket Submitted",schedule:"On event (ServiceNow webhook)",src:"servicenow",cat:"break_fix",active:true,lastRun:"2026-03-05 15:00",execCount:17,lastResult:"success"},
+  {id:"AR-022",name:"Break-Fix Vendor SLA Monitor",trigger:"break_fix ticket in vendor_review > 3 days",condition:"MS case created AND no vendor response",action:"Send vendor follow-up \u2192 Escalate at 5d \u2192 Flag for replacement review at 7d",schedule:"Daily 10:00 AM",src:"itam",cat:"break_fix",active:true,lastRun:"2026-03-06 10:00",execCount:9,lastResult:"success"},
+];
+
+const AUTO_CAT={refresh:{l:"Refresh",c:C.amber,bg:C.amberSoft},inventory:{l:"Inventory",c:C.purple,bg:C.purpleSoft},provisioning:{l:"Provisioning",c:C.orange,bg:C.orangeSoft},shipment:{l:"Shipment",c:C.accent,bg:C.accentSoft},return:{l:"Return",c:C.cyan,bg:C.cyanSoft},retirement:{l:"Retirement",c:C.gray,bg:C.graySoft},compliance:{l:"Compliance",c:C.red,bg:C.redSoft},onboarding:{l:"Onboarding",c:C.green,bg:C.greenSoft},offboarding:{l:"Offboarding",c:C.red,bg:C.redSoft},break_fix:{l:"Break-Fix",c:C.orange,bg:C.orangeSoft}};
+const CatChip=({c})=>{const x=AUTO_CAT[c];return x?(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:x.c,background:x.bg,fontFamily:MN}}>{x.l}</span>):null;};
+const AUTO_AUDIT_TYPE={refresh:"refresh_created",inventory:"reservation",provisioning:"provisioning",shipment:"shipment",return:"return_received",retirement:"lease_return",compliance:"compliance",onboarding:"onboarding",offboarding:"offboarding",break_fix:"break_fix"};
+const toLocalTimestamp=(d=new Date())=>`${toLocalISODate(d)} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+let _assetActivitySeq=1;
+const nextAssetActivityId=()=>`AA-${String(_assetActivitySeq++).padStart(6,"0")}`;
+const createAssetActivityEntry=({asset,label,detail="",ts=toLocalTimestamp(),by="Current User"})=>({id:nextAssetActivityId(),asset,label,detail,ts,by});
+const buildInitialAssetActivity=(assets=[])=>assets.flatMap(asset=>(asset.hist||[]).map((h,idx)=>createAssetActivityEntry({asset:asset.tag,label:h.e,detail:h.b?`by ${h.b}`:"",ts:`${h.d} ${String(Math.min(9+idx,23)).padStart(2,"0")}:00`,by:h.b||"System"})));
+const buildImportedAssetActivity=(assets=[],fileName="")=>{
+  const ts=toLocalTimestamp();
+  return assets.flatMap(asset=>[
+    createAssetActivityEntry({asset:asset.tag,label:"Imported from AMS",detail:fileName?`Source file: ${fileName}`:"Source file: AMS export",ts,by:"AMS Import"}),
+    createAssetActivityEntry({asset:asset.tag,label:"Promoted to live registry",detail:"Imported registry is now active",ts,by:"AMS Import"}),
+  ]);
+};
+
+const AUTO_LOG=[
+  {id:"EX-001",ts:"2026-03-06 09:00",rule:"AR-016",name:"Follow-Up Escalation",asset:"TP-2651",user:"Jill Bowyer",result:"success",detail:"No response 9 days. Reminder sent. Manager notification queued for day 10."},
+  {id:"EX-002",ts:"2026-03-06 08:00",rule:"AR-013",name:"Compliance Drift Alert",asset:"LT-2918",user:"Maria Santos",result:"success",detail:"Non-compliant 42 days. ServiceNow INC0043102 created. Linked to RC-2026-0001."},
+  {id:"EX-003",ts:"2026-03-06 08:00",rule:"AR-007",name:"FedEx Delivery Confirm",asset:"LT-5210",user:"Trisha Louque",result:"pending",detail:"Shipment 794644790132 in transit. ETA Mar 11. Next poll: 09:00."},
+  {id:"EX-004",ts:"2026-03-06 02:00",rule:"AR-001",name:"Lease Expiry Detection",asset:"(batch)",user:"438 assets scanned",result:"success",detail:"Nightly scan. 12 new candidates. 3 urgency upgrades (HIGH to CRITICAL)."},
+  {id:"EX-005",ts:"2026-03-06 02:00",rule:"AR-003",name:"RAM Threshold Refresh",asset:"(batch)",user:"467 assets scanned",result:"success",detail:"16GB scan complete. 0 new candidates (all previously flagged)."},
+  {id:"EX-006",ts:"2026-03-05 16:30",rule:"AR-008",name:"Return Check-In",asset:"TP-2654",user:"Lynn Sailors",result:"success",detail:"Barcode scan PTC. Condition: Good. AMS updated. RC-2026-0055 \u2192 Return Received."},
+  {id:"EX-007",ts:"2026-03-05 14:20",rule:"AR-006",name:"Shipment Creation",asset:"LT-5210",user:"Trisha Louque",result:"success",detail:"FedEx 794644790132 logged. Asset \u2192 In Transit. RC-2026-0035 \u2192 Shipped."},
+  {id:"EX-008",ts:"2026-03-05 14:20",rule:"AR-004",name:"Reserve on Schedule",asset:"LT-5201",user:"Cara Warren",result:"success",detail:"Inventory reservation created. LT-5201 \u2192 Reserved. RC-2026-0020 linked."},
+  {id:"EX-009",ts:"2026-03-05 11:00",rule:"AR-005",name:"Provisioning Update",asset:"LT-5220",user:"Angus Gambill",result:"success",detail:"Intune enrolled. Autopilot registered. Profile: Amwins-Standard-Win11."},
+  {id:"EX-010",ts:"2026-03-04 15:45",rule:"AR-012",name:"Offboarding Recovery",asset:"LT-4455",user:"Rachel Torres",result:"success",detail:"AD disable. FedEx return label FX-RTN-2026-0045 generated. 5d SLA started."},
+  {id:"EX-011",ts:"2026-03-03 09:00",rule:"AR-009",name:"AMS Unassign",asset:"TP-2802",user:"Angeley Vang",result:"success",detail:"AMS unassignment. RC-2026-0060 \u2192 Checked In. Staged for LFS batch."},
+  {id:"EX-012",ts:"2026-03-01 10:00",rule:"AR-010",name:"Lease Return Batch",asset:"TP-2805",user:"Nicholas Prince",result:"success",detail:"LFS batch shipped. 4 devices. Asset \u2192 Retired. Deregistered."},
+  {id:"EX-013",ts:"2026-03-01 10:00",rule:"AR-011",name:"LFS Receipt",asset:"TP-2805",user:"Nicholas Prince",result:"success",detail:"Vendor confirmed. RC-2026-0070 \u2192 Closed. Certificate: CD-2026-0091."},
+  {id:"EX-014",ts:"2026-02-28 16:00",rule:"AR-004",name:"Reserve on Schedule",asset:"LT-5315",user:"Tyler Newton",result:"success",detail:"ATL Q3 wave reservation. LT-5315 \u2192 Reserved. Scheduled May 2."},
+  {id:"EX-015",ts:"2026-03-06 09:00",rule:"AR-015",name:"Reservation Expiry",asset:"LT-5088",user:"\u2014",result:"success",detail:"14-day reservation expired. Asset returned to In Stock."},
+  {id:"EX-016",ts:"2026-03-06 08:00",rule:"AR-014",name:"Low Inventory Alert",asset:"\u2014",user:"\u2014",result:"success",detail:"3 SKUs below reorder: H570e (1), B5200 (1), KM555 (1)."},
+];
+
+function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
+  const [tab,setTab]=useState("dashboard");
+  const [sel,setSel]=useState(null);
+  const [logSel,setLogSel]=useState(null);
+  const [catF,setCatF]=useState("all");
+  const [rules,setRules]=useState(AUTO_RULES);
+  const [autoLog,setAutoLog]=useState(AUTO_LOG);
+
+  const activeRules=useMemo(()=>rules.filter(r=>r.active),[rules]);
+  const totalExecs=useMemo(()=>rules.reduce((a,r)=>a+r.execCount,0),[rules]);
+  const catCounts=useMemo(()=>{const c={};rules.forEach(r=>{c[r.cat]=(c[r.cat]||0)+1;});return c;},[rules]);
+  const successRate=useMemo(()=>{const s=autoLog.filter(l=>l.result==="success").length;return autoLog.length?Math.round(s/autoLog.length*100):0;},[autoLog]);
+  const filtRules=useMemo(()=>catF==="all"?rules:rules.filter(r=>r.cat===catF),[rules,catF]);
+  const detRule=sel?rules.find(r=>r.id===sel):null;
+  const detLog=logSel?autoLog.find(l=>l.id===logSel):null;
+  const ruleExecs=(rId)=>autoLog.filter(l=>l.rule===rId);
+  const recordExecution=(rule,result,detail,asset=null,user="Automation Engine")=>{
+    const ts=toLocalTimestamp();
+    const nextId=`EX-${String(autoLog.length+1).padStart(3,"0")}`;
+    const entry={id:nextId,ts,rule:rule.id,name:rule.name,asset,user,result,detail};
+    setAutoLog(prev=>[entry,...prev]);
+    setRules(prev=>prev.map(r=>r.id===rule.id?{...r,lastRun:ts,lastResult:result,execCount:r.execCount+1}:r));
+    if(onAutomationEvent){onAutomationEvent({ts,rule,entry});}
+    return entry;
+  };
+  const toggleRule=(rId)=>{
+    const rule=rules.find(r=>r.id===rId);
+    if(!rule)return;
+    const willBeActive=!rule.active;
+    setRules(prev=>prev.map(r=>r.id===rId?{...r,active:willBeActive}:r));
+    const detail=`Rule ${rule.id} ${willBeActive?"enabled":"disabled"} from Lifecycle Automation Engine.`;
+    recordExecution(rule,"success",detail,null,"ITAM Admin");
+    setToast(`Rule ${rId} ${willBeActive?"enabled":"disabled"}`);
+  };
+  const tabBtn=(id,l)=>(<button onClick={()=>{setTab(id);setSel(null);setLogSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${tab===id?C.accent:C.border}`,background:tab===id?C.accentSoft:C.surface,color:tab===id?C.accent:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>);
+
+  return (<>
+    <div style={{display:"flex",gap:6,marginBottom:14}}>{tabBtn("dashboard","Overview")}{tabBtn("rules","Lifecycle Rules")}{tabBtn("log","Execution Log")}</div>
+
+    {tab==="dashboard"&&(<>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Active Rules" value={activeRules.length} sub={`of ${rules.length}`} color={C.green}/>
+        <Kpi label="Executions" value={totalExecs.toLocaleString()} sub="All time" color={C.accent}/>
+        <Kpi label="Success Rate" value={successRate+"%"} color={successRate>95?C.green:C.amber}/>
+        <Kpi label="Today" value={autoLog.filter(l=>l.ts.startsWith(toLocalISODate())).length} sub="Runs today" color={C.cyan}/>
+        <Kpi label="Pending" value={autoLog.filter(l=>l.result==="pending").length} color={C.amber}/>
+        <Kpi label="Categories" value={Object.keys(catCounts).length}/>
+      </div>
+      <SH color={C.accent}>Automation by Category</SH>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8,marginBottom:16}}>
+        {Object.entries(AUTO_CAT).map(([k,v])=>{const cnt=catCounts[k]||0;const ex=rules.filter(r=>r.cat===k).reduce((a,r)=>a+r.execCount,0);return (<div key={k} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,borderLeft:`3px solid ${v.c}`,boxShadow:C.shadow}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><CatChip c={k}/><span style={{fontSize:16,fontWeight:700,color:v.c,fontFamily:SN}}>{cnt}</span></div><div style={{fontSize:10,color:C.muted,marginTop:4,fontFamily:MN}}>{ex.toLocaleString()} runs</div></div>);})}
+      </div>
+      <SH color={C.cyan} badge={`${autoLog.length}`}>Recent Events</SH>
+      <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:300}}>
+        <table style={{width:"100%",minWidth:700}}><thead><tr>{["Time","Rule","Asset","Result","Detail"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
+          <tbody>{autoLog.slice(0,10).map((l,i)=>(<tr key={l.id} onClick={()=>{setTab("log");setLogSel(l.id);}} style={{cursor:"pointer"}}><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{l.ts}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,fontWeight:500}}>{l.name}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"—"}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:250,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail}</td></tr>))}</tbody>
+        </table>
+      </div>
+    </>)}
+
+    {tab==="rules"&&(<>
+      <div style={{display:"flex",gap:4,marginBottom:10}}>
+        <button onClick={()=>setCatF("all")} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${catF==="all"?C.accent:C.border}`,background:catF==="all"?C.accentSoft:C.surface,color:catF==="all"?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({rules.length})</button>
+        {Object.entries(AUTO_CAT).map(([k,v])=>{const n=catCounts[k]||0;return n>0?(<button key={k} onClick={()=>{setCatF(catF===k?"all":k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${catF===k?C.accent:C.border}`,background:catF===k?C.accentSoft:C.surface,color:catF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{v.l} ({n})</button>):null;})}
+      </div>
+      <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+        <div style={{flex:1,background:C.surface,borderRadius:detRule?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 310px)"}}>
+          <table style={{width:"100%",minWidth:850}}><thead><tr>{[{l:"ID",w:60},{l:"Rule",w:190},{l:"Cat",w:85},{l:"Schedule",w:100},{l:"Runs",w:60},{l:"Last Run",w:125},{l:"Status",w:65},{l:"On/Off",w:55}].map(h=>(<th key={h.l} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",width:h.w}}>{h.l}</th>))}</tr></thead>
+            <tbody>{filtRules.map((r,i)=>(<tr key={r.id} onClick={()=>setSel(sel===r.id?null:r.id)} style={{cursor:"pointer",opacity:r.active?1:0.5}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{r.name}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CatChip c={r.cat}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:10.5,color:C.sub,fontFamily:MN}}>{r.schedule}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:11,textAlign:"center"}}>{r.execCount}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.lastRun}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:r.lastResult==="success"?C.greenSoft:C.redSoft,color:r.lastResult==="success"?C.green:C.red,fontWeight:600,fontFamily:MN}}>{r.lastResult}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><button onClick={e=>{e.stopPropagation();toggleRule(r.id);}} style={{width:32,height:18,borderRadius:9,border:"none",background:r.active?C.green:C.borderHeavy,cursor:"pointer",position:"relative"}}><div style={{width:14,height:14,borderRadius:7,background:"#FFF",position:"absolute",top:2,left:r.active?16:2,transition:"left 0.15s",boxShadow:C.shadow}}/></button></td>
+            </tr>))}</tbody>
+          </table>
+        </div>
+        {detRule&&(<div style={{width:380,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 310px)"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{detRule.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{detRule.name}</div><div style={{marginTop:5,display:"flex",gap:5}}><CatChip c={detRule.cat}/><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:detRule.active?C.greenSoft:C.graySoft,color:detRule.active?C.green:C.gray,fontWeight:600}}>{detRule.active?"Active":"Off"}</span></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
+            <button onClick={()=>toggleRule(detRule.id)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${detRule.active?C.redBorder:C.greenBorder}`,background:detRule.active?C.redSoft:C.greenSoft,color:detRule.active?C.red:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{detRule.active?"Disable":"Enable"}</button>
+            <button onClick={()=>{const e=recordExecution(detRule,"success",`Manual execution of ${detRule.id} from Lifecycle Automation Engine.`,`RC-${toLocalISODate().slice(0,4)}-AUTO`,"ITAM Admin");setToast(`${detRule.id} executed (${e.id})`);}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Run Now</button>
+            <button onClick={()=>{if(go)go("audit");setToast("Audit log");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Audit Log</button>
+          </div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            {[["Trigger",detRule.trigger],["Condition",detRule.condition],["Schedule",detRule.schedule],["Source",detRule.src],["Executions",String(detRule.execCount)],["Last Run",detRule.lastRun]].map(([l,v],i)=>(<div key={i} style={{padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{fontSize:10,color:C.muted,marginBottom:2}}>{l}</div><div style={{fontSize:11.5,color:C.text,fontFamily:["Schedule","Executions","Last Run"].includes(l)?MN:SN}}>{v}</div></div>))}
+          </div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>ACTION</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.6,padding:"6px 8px",background:C.surfaceAlt,borderRadius:5,border:`1px solid ${C.borderLight}`}}>{detRule.action}</div></div>
+          <div style={{padding:"10px 18px"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>RECENT RUNS</div>
+            {ruleExecs(detRule.id).length===0?<div style={{fontSize:11,color:C.muted}}>No recent runs.</div>:ruleExecs(detRule.id).slice(0,5).map(l=>(<div key={l.id} style={{padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{l.ts}</span><span style={{fontSize:10,padding:"1px 5px",borderRadius:3,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></div><div style={{fontSize:11,color:C.sub,marginTop:2}}>{l.detail.slice(0,80)}{l.detail.length>80?"\u2026":""}</div></div>))}
+          </div>
+        </div>)}
+      </div>
+    </>)}
+
+    {tab==="log"&&(<>
+      <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+        <div style={{flex:1,background:C.surface,borderRadius:detLog?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 280px)"}}>
+          <table style={{width:"100%",minWidth:800}}><thead><tr>{[{l:"ID",w:60},{l:"Time",w:125},{l:"Rule",w:180},{l:"Asset",w:70},{l:"User",w:110},{l:"Result",w:65},{l:"Detail",w:220}].map(h=>(<th key={h.l} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",width:h.w}}>{h.l}</th>))}</tr></thead>
+            <tbody>{autoLog.map((l,i)=>(<tr key={l.id} onClick={()=>setLogSel(logSel===l.id?null:l.id)} style={{cursor:"pointer"}}>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{l.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{l.ts}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,fontWeight:500}}>{l.name}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"—"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{l.user||"—"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail}</td>
+            </tr>))}</tbody>
+          </table>
+        </div>
+        {detLog&&(<div style={{width:380,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 280px)"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{detLog.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{detLog.name}</div><div style={{marginTop:5}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:detLog.result==="success"?C.greenSoft:C.amberSoft,color:detLog.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{detLog.result}</span></div></div><button onClick={()=>setLogSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>{[["ID",detLog.id],["Time",detLog.ts],["Rule",detLog.rule],["Asset",detLog.asset||"—"],["User",detLog.user||"—"],["Result",detLog.result]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["ID","Time","Rule","Asset"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}</div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>DETAIL</div><div style={{fontSize:12,color:C.sub,lineHeight:1.6}}>{detLog.detail}</div></div>
+          <div style={{padding:"10px 18px",display:"flex",gap:5}}>
+            {detLog.asset&&detLog.asset!=="\u2014"&&detLog.asset!=="(batch)"&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(detLog.asset);else if(go){go("registry");setToast(`Opening ${detLog.asset}`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>View Asset</button>}
+            <button onClick={()=>{if(go)go("audit");setToast("Audit log");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Audit Log</button>
+          </div>
+        </div>)}
+      </div>
+    </>)}
+  </>);
+}
+
+function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS}){
+  const regAssets=assets;
+  const today=useMemo(()=>new Date(toLocalISODate()+"T00:00:00"),[]);
+  const mFmt=useMemo(()=>new Intl.DateTimeFormat("en-US",{month:"short"}),[]);
+  const parseDate=(s)=>{if(!s||s==="\u2014")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
+  const daysUntil=(s)=>{const d=parseDate(s);if(!d)return null;return Math.floor((d-today)/(1000*60*60*24));};
+  const monthKey=(s)=>{const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;};
+  const monthLabel=(k)=>{const [y,m]=k.split("-").map(Number);return `${mFmt.format(new Date(y,m-1,1))} ${String(y).slice(2)}`;};
+  const parseAgeMonths=(a)=>{if(!a)return 0;const y=(a.match(/(\d+)\s*yr/)||[])[1];const mo=(a.match(/(\d+)\s*mo/)||[])[1];return (Number(y)||0)*12+(Number(mo)||0);};
+
+  const regAssigned=useMemo(()=>regAssets.filter(a=>a.status==="assigned"),[regAssets]);
+  const activeRefreshCases=useMemo(()=>CASES.filter(c=>!["closed","checked_in"].includes(c.status)),[]);
+  const leaseWindows=useMemo(()=>{
+    // AMS exports map WarrantyExpiryDate → both we and le. Use we as primary; fall back to le for seed assets.
+    const rows=regAssets.map(a=>daysUntil(a.we&&a.we!=="\u2014"?a.we:a.le)).filter(v=>v!==null);
+    const inRange=(n)=>rows.filter(d=>d>=0&&d<=n).length;
+    return {d30:inRange(30),d60:inRange(60),d90:inRange(90),d180:inRange(180),expired:rows.filter(d=>d<0).length};
+  },[regAssets,today]);
+  const procurementYtd=useMemo(()=>{
+    const y=currentYear();
+    return RAW_PO.filter(p=>p.dt.startsWith(y)).reduce((sum,p)=>sum+p.items.reduce((a,i)=>a+i.ext,0),0);
+  },[]);
+  const availableInventory=useMemo(()=>INV.reduce((a,i)=>a+i.q,0),[]);
+  const reservedInventory=useMemo(()=>SEED_BK.filter(b=>["submitted","pending_approval","approved"].includes(b.status)).reduce((sum,b)=>sum+b.items.reduce((s,it)=>s+it.qty,0),0),[]);
+  const complianceExceptions=useMemo(()=>regAssets.filter(a=>a.intune==="Non-compliant").length,[regAssets]);
+  const avgRefreshCycleDays=useMemo(()=>Math.round((TECHS.reduce((a,t)=>a+t.avg,0)/TECHS.length)*0.28*10)/10,[]);
+  const returnsPending=useMemo(()=>CASES.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[regAssets]);
+
+  const refreshByMonth=useMemo(()=>{
+    const map={};
+    CASES.filter(c=>c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    const keys=Object.keys(map).sort();
+    return keys.map(k=>({k,l:monthLabel(k),v:map[k]}));
+  },[]);
+  const refreshByOffice=useMemo(()=>{
+    const map={};
+    CASES.forEach(c=>{const k=c.office.split(" (")[0];map[k]=(map[k]||0)+1;});
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
+  },[]);
+  const stageBreakdown=useMemo(()=>{
+    const map={};
+    CASES.forEach(c=>{map[c.status]=(map[c.status]||0)+1;});
+    return Object.entries(map).map(([k,v])=>({k,v,l:RF_S[k]?.s||k}));
+  },[]);
+  const overdueRefreshes=useMemo(()=>CASES.filter(c=>c.dte<=30&&!["closed","checked_in","deploy_complete"].includes(c.status)).length,[]);
+  const completionTrend=useMemo(()=>{
+    const map={};
+    CASES.filter(c=>["deploy_complete","checked_in","closed"].includes(c.status)&&c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
+  },[]);
+  const returnTrend=useMemo(()=>{
+    const map={};
+    AUDIT_EVENTS.filter(e=>["return_received","lease_return"].includes(e.type)).forEach(e=>{const k=e.ts.slice(0,7);map[k]=(map[k]||0)+1;});
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
+  },[]);
+
+  const techPerf=useMemo(()=>TECHS.map(t=>{
+    const completed=CASES.filter(c=>c.tech===t.name&&["deploy_complete","checked_in","closed"].includes(c.status)).length;
+    const provisioning=AUDIT_EVENTS.filter(e=>e.type==="provisioning"&&e.by===t.name).length;
+    const shipped=AUDIT_EVENTS.filter(e=>e.type==="shipment"&&e.by===t.name).length;
+    const returnsDone=CASES.filter(c=>c.tech===t.name&&["checked_in","closed"].includes(c.status)).length;
+    const returnsTotal=CASES.filter(c=>c.tech===t.name&&["return_pending","checked_in","closed"].includes(c.status)).length||1;
+    return {name:t.name,completed,provisioning,shipped,avg:t.avg,returnRate:Math.round((returnsDone/returnsTotal)*100)};
+  }),[]);
+
+  const inventoryByModel=useMemo(()=>[...INV].sort((a,b)=>b.q-a.q).slice(0,10).map(i=>({label:i.n,v:i.q})),[]);
+  const agingStock=useMemo(()=>{
+    const inv=regAssets.filter(a=>a.status==="inventory");
+    const months=inv.map(a=>parseAgeMonths(a.age));
+    return {
+      fresh:months.filter(m=>m<3).length,
+      standard:months.filter(m=>m>=3&&m<=12).length,
+      aged:months.filter(m=>m>12).length,
+    };
+  },[regAssets]);
+  const spendByMonth=useMemo(()=>{
+    const map={};
+    RAW_PO.forEach(p=>{const k=monthKey(p.dt);if(!k)return;map[k]=(map[k]||0)+p.items.reduce((a,i)=>a+i.ext,0);});
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
+  },[]);
+  const spendByVendor=useMemo(()=>{
+    const map={};
+    RAW_PO.forEach(p=>p.items.forEach(i=>{map[i.mfr]=(map[i.mfr]||0)+i.ext;}));
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
+  },[]);
+  const spendByOffice=useMemo(()=>{
+    const map={};
+    RAW_PO.forEach(p=>{const k=`${p.city} | ${p.cc}`;map[k]=(map[k]||0)+p.items.reduce((a,i)=>a+i.ext,0);});
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
+  },[]);
+  const topOrdered=useMemo(()=>{
+    const map={};
+    RAW_PO.forEach(p=>p.items.forEach(i=>{if(["Dell","Apple","Microsoft","Lenovo"].includes(i.mfr)){map[i.prod]=(map[i.prod]||0)+i.qty;}}));
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
+  },[]);
+
+  const forecastDemand=useMemo(()=>{
+    const q2=WAVES.reduce((a,w)=>a+w.q2,0);
+    const q3=WAVES.reduce((a,w)=>a+w.q3,0);
+    const q4=WAVES.reduce((a,w)=>a+w.q4,0);
+    return [
+      {m:"Apr",v:Math.round(q2*0.28)},
+      {m:"May",v:Math.round(q2*0.36)},
+      {m:"Jun",v:Math.round(q2*0.36)},
+      {m:"Jul",v:Math.round(q3*0.30)},
+      {m:"Aug",v:Math.round(q3*0.33)},
+      {m:"Sep",v:Math.round(q3*0.37)},
+      {m:"Oct",v:Math.round(q4*0.34)},
+      {m:"Nov",v:Math.round(q4*0.33)},
+      {m:"Dec",v:Math.round(q4*0.33)},
+    ];
+  },[]);
+  const leaseBacklog=useMemo(()=>regAssets.filter(a=>a.status==="pending_return").length+CASES.filter(c=>c.status==="return_pending").length,[regAssets]);
+  const replacementForecast=useMemo(()=>leaseWindows.d90+Math.round(WAVES.reduce((a,w)=>a+w.gb16,0)*0.35),[leaseWindows]);
+
+  const risk=useMemo(()=>{
+    const missingTracking=CASES.filter(c=>c.status==="return_pending").length;
+    const unassigned=regAssets.filter(a=>a.status==="assigned"&&(a.user==="\u2014"||!a.user)).length;
+    const stuck=regAssets.filter(a=>["pending_return","repair","in_transit"].includes(a.status)).length;
+    const unreturnedLeased=regAssets.filter(a=>a.status==="pending_return"&&(daysUntil(a.le)||0)<0).length;
+    const incomplete=regAssets.filter(a=>!a.po||!a.pd||!a.we).length;
+    const auditExceptions=AUDIT_EVENTS.filter(e=>e.type==="compliance"||e.detail.toLowerCase().includes("escalation")).length;
+    return {missingTracking,unassigned,stuck,unreturnedLeased,incomplete,auditExceptions};
+  },[regAssets,today]);
+
+  const maxOf=(arr,key)=>Math.max(1,...arr.map(x=>x[key]));
+  const maxRefresh=maxOf(refreshByMonth,"v");
+  const maxSpend=maxOf(spendByMonth,"v");
+  const maxVendor=maxOf(spendByVendor,"v");
+
+  const Panel=({title,children,badge})=>(<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:"var(--card-radius)",boxShadow:`${C.shadowMd}, inset 0 1px 0 ${C.innerHighlight}`,padding:"var(--card-padding)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{title}</div>{badge&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:6,background:C.accentSoft,color:C.accent,fontWeight:700,fontFamily:MN}}>{badge}</span>}</div>{children}</div>);
+
+  return (<>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style={{fontSize:11,color:C.muted}}>Leadership visibility across lifecycle, refresh, inventory, procurement, technician throughput, lease forecasting, and compliance risk.</div>
+      <button onClick={()=>setToast("Executive report exported")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>Export Brief</button>
+    </div>
+
+    <SH color={C.accent} badge="Executive KPI Summary">Executive KPI Summary</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+      <Kpi label="Total Managed Assets" value={regAssets.length.toLocaleString()} color={C.accent} onClick={()=>go("registry")}/>
+      <Kpi label="Active Assigned Assets" value={regAssigned.length} color={C.green} onClick={()=>go("registry")}/>
+      <Kpi label="Assets Near Lease Expiry" value={leaseWindows.d90} sub="<= 90 days" color={C.amber} onClick={()=>go("refresh.queue")}/>
+      <Kpi label="Assets in Refresh Pipeline" value={activeRefreshCases.length} color={C.orange} onClick={()=>go("refresh.queue")}/>
+      <Kpi label="Returns Pending" value={returnsPending} color={C.red} onClick={()=>go("returns")}/>
+      <Kpi label="Available Inventory" value={availableInventory.toLocaleString()} sub={`${reservedInventory} reserved`} color={C.cyan} onClick={()=>go("inventory.stock")}/>
+      <Kpi label="Procurement Spend YTD" value={`$${(procurementYtd/1e6).toFixed(2)}M`} color={C.purple} onClick={()=>go("procurement")}/>
+      <Kpi label="Compliance Exceptions" value={complianceExceptions} color={C.red} onClick={()=>go("audit")} alert={complianceExceptions>0}/>
+      <Kpi label="Avg Refresh Cycle Time" value={`${avgRefreshCycleDays} days`} color={C.gray} onClick={()=>go("refresh.techs")}/>
+    </div>
+
+    <SH color={C.cyan}>Refresh Operations Analytics</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr",gap:10}}>
+      <Panel title="Refresh Volume by Month" badge={`${refreshByMonth.reduce((a,x)=>a+x.v,0)} total`}>
+        {refreshByMonth.length===0?<div style={{fontSize:11,color:C.muted}}>No monthly schedule data</div>:refreshByMonth.map(r=>(<div key={r.k} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><span style={{width:54,fontSize:10,color:C.chartAxis,fontFamily:MN}}>{r.l}</span><div style={{flex:1,height:8,background:C.chartGrid,borderRadius:6,overflow:"hidden"}}><div style={{width:`${(r.v/maxRefresh)*100}%`,height:"100%",background:C.accent}}/></div><span style={{width:20,textAlign:"right",fontSize:10.5,fontFamily:MN}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Refresh Volume by Office">
+        {refreshByOffice.map(r=>(<div key={r.k} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5}}>{r.k}</span><span style={{fontFamily:MN,fontWeight:700,color:C.accent}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Pipeline Stages" badge={`${overdueRefreshes} overdue`}>
+        {stageBreakdown.map(s=>(<div key={s.k} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5}}>{s.l}</span><span style={{fontFamily:MN,fontWeight:700}}>{s.v}</span></div>))}
+      </Panel>
+      <Panel title="Completion Trend">
+        {completionTrend.length===0?<div style={{fontSize:11,color:C.muted}}>No completion history</div>:completionTrend.map(r=>(<div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:11.5}}>{r.l}</span><span style={{fontFamily:MN,color:C.green,fontWeight:700}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Return Completion Trend">
+        {returnTrend.map(r=>(<div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:11.5}}>{r.l}</span><span style={{fontFamily:MN,color:C.cyan,fontWeight:700}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Actions">
+        <button onClick={()=>go("refresh.queue")} style={{width:"100%",marginBottom:6,padding:"7px 10px",borderRadius:6,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:11,cursor:"pointer"}}>Open Refresh Queue</button>
+        <button onClick={()=>go("refresh.waves")} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:11,cursor:"pointer"}}>Open Wave Planner</button>
+      </Panel>
+    </div>
+
+    <SH color={C.orange}>Technician Performance Analytics</SH>
+    <Panel title="Technician Throughput" badge={`${techPerf.length} technicians`}>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",minWidth:760}}>
+          <thead><tr>{["Technician","Refreshes Completed","Provisioning","Shipments","Avg Cycle (min)","Return Closure Rate"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase",borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+          <tbody>{techPerf.map((t,i)=><tr key={t.name}><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontSize:12,fontWeight:600,background:i%2?C.surfaceAlt:C.surface}}>{t.name}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,background:i%2?C.surfaceAlt:C.surface}}>{t.completed}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,background:i%2?C.surfaceAlt:C.surface}}>{t.provisioning}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,background:i%2?C.surfaceAlt:C.surface}}>{t.shipped}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,background:i%2?C.surfaceAlt:C.surface}}>{t.avg}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,color:t.returnRate<70?C.red:C.green,background:i%2?C.surfaceAlt:C.surface}}>{t.returnRate}%</td></tr>)}</tbody>
+        </table>
+      </div>
+    </Panel>
+
+    <SH color={C.purple}>Inventory & Procurement Analytics</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+      <Panel title="Inventory by Model">
+        {inventoryByModel.slice(0,8).map(r=>(<div key={r.label} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{r.label}</span><span style={{fontFamily:MN,fontWeight:700}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Reserved vs Available / Aging Warehouse Stock">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+          <div style={{padding:"8px 10px",border:`1px solid ${C.borderLight}`,borderRadius:6}}><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>AVAILABLE</div><div style={{fontSize:18,fontWeight:700,color:C.green}}>{availableInventory.toLocaleString()}</div></div>
+          <div style={{padding:"8px 10px",border:`1px solid ${C.borderLight}`,borderRadius:6}}><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>RESERVED</div><div style={{fontSize:18,fontWeight:700,color:C.purple}}>{reservedInventory}</div></div>
+        </div>
+        {[["Fresh (<3m)",agingStock.fresh,C.green],["Standard (3-12m)",agingStock.standard,C.amber],["Aged (>12m)",agingStock.aged,C.red]].map(([l,v,col])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:11.5}}>{l}</span><span style={{fontFamily:MN,fontWeight:700,color:col}}>{v}</span></div>)}
+      </Panel>
+      <Panel title="Spend by Month">
+        {spendByMonth.map(r=>(<div key={r.l} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><span style={{width:50,fontSize:10,fontFamily:MN,color:C.muted}}>{r.l}</span><div style={{flex:1,height:8,background:C.chartGrid,borderRadius:6}}><div style={{height:"100%",width:`${(r.v/maxSpend)*100}%`,background:C.purple,borderRadius:6}}/></div><span style={{fontSize:10,fontFamily:MN}}>${Math.round(r.v/1000)}k</span></div>))}
+      </Panel>
+      <Panel title="Spend by Vendor">
+        {spendByVendor.map(r=>(<div key={r.k} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><span style={{width:96,fontSize:10,color:C.chartAxis,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.k}</span><div style={{flex:1,height:8,background:C.chartGrid,borderRadius:6}}><div style={{height:"100%",width:`${(r.v/maxVendor)*100}%`,background:C.cyan,borderRadius:6}}/></div><span style={{fontSize:10,fontFamily:MN}}>${Math.round(r.v/1000)}k</span></div>))}
+      </Panel>
+      <Panel title="Spend by Office / Cost Center">
+        {spendByOffice.map(r=>(<div key={r.k} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{r.k}</span><span style={{fontFamily:MN}}>${Math.round(r.v/1000)}k</span></div>))}
+      </Panel>
+      <Panel title="Top Ordered Hardware Models">
+        {topOrdered.map(r=>(<div key={r.k} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:230}}>{r.k}</span><span style={{fontFamily:MN,fontWeight:700,color:C.accent}}>{r.v}</span></div>))}
+      </Panel>
+    </div>
+
+    <SH color={C.amber}>Lease Forecasting</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1.2fr 1fr",gap:10}}>
+      <Panel title="Devices Expiring by Horizon">
+        {[["30 Days",leaseWindows.d30],["60 Days",leaseWindows.d60],["90 Days",leaseWindows.d90],["180 Days",leaseWindows.d180],["Already Expired",leaseWindows.expired]].map(([l,v])=>(<div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5}}>{l}</span><span style={{fontFamily:MN,fontWeight:700,color:v>0?C.amber:C.sub}}>{v}</span></div>))}
+      </Panel>
+      <Panel title="Forecasted Refresh Demand by Month">
+        {forecastDemand.map(r=>(<div key={r.m} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><span style={{width:36,fontSize:10,color:C.chartAxis,fontFamily:MN}}>{r.m}</span><div style={{flex:1,height:8,background:C.chartGrid,borderRadius:6}}><div style={{height:"100%",width:`${(r.v/maxOf(forecastDemand,"v"))*100}%`,background:C.orange,borderRadius:6}}/></div><span style={{fontSize:10,fontFamily:MN}}>{r.v}</span></div>))}
+      </Panel>
+      <Panel title="Backlog / Replacement Demand">
+        <div style={{padding:"8px 10px",border:`1px solid ${C.borderLight}`,borderRadius:6,marginBottom:6}}><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>LEASE RETURN BACKLOG</div><div style={{fontSize:20,fontWeight:700,color:C.red}}>{leaseBacklog}</div></div>
+        <div style={{padding:"8px 10px",border:`1px solid ${C.borderLight}`,borderRadius:6}}><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>REPLACEMENT DEMAND FORECAST</div><div style={{fontSize:20,fontWeight:700,color:C.accent}}>{replacementForecast}</div></div>
+      </Panel>
+    </div>
+
+    <SH color={C.red}>Compliance & Risk</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:8}}>
+      {[["Missing Return Tracking",risk.missingTracking,"returns"],["Unassigned Assets",risk.unassigned,"registry"],["Assets Stuck in Status",risk.stuck,"audit"],["Unreturned Leased Devices",risk.unreturnedLeased,"returns"],["Incomplete Lifecycle Records",risk.incomplete,"registry"],["Audit Exception Counts",risk.auditExceptions,"audit"]].map(([l,v,d])=>(<div key={l} onClick={()=>go(d)} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:"var(--card-radius)",padding:"var(--card-padding)",cursor:"pointer",boxShadow:`${C.shadowMd}, inset 0 1px 0 ${C.innerHighlight}`}}><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div><div style={{fontSize:24,fontWeight:700,color:v>0?C.red:C.green,lineHeight:1.1,marginTop:4}}>{v}</div></div>))}
+    </div>
+  </>);
+}
+
+function OperationsWorkloadPlanner({go,setToast,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
+  const regAssets=assets;
+  const weekdays=["Mon","Tue","Wed","Thu","Fri"];
+  const startOfWeek=(d)=>{const x=new Date(`${toLocalISODate(d)}T00:00:00`);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x;};
+  const monday=useMemo(()=>startOfWeek(new Date()),[]);
+  const dayDate=(idx)=>{const d=new Date(monday);d.setDate(monday.getDate()+idx);return d;};
+  const dayKey=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const fmtDay=(idx)=>{const d=dayDate(idx);return `${weekdays[idx]} ${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`;};
+  const parseTs=(s)=>{if(!s)return null;const d=new Date(s.includes("T")?s:`${s.replace(" ","T")}`);return Number.isNaN(d.getTime())?null:d;};
+  const parseYmd=(s)=>s?new Date(`${s}T09:00:00`):null;
+  const idxByDate=(d)=>{if(!d)return null;const diff=Math.floor((new Date(dayKey(d)+"T00:00:00")-monday)/(1000*60*60*24));return diff>=0&&diff<5?diff:null;};
+  const timeFor=(type,raw)=>raw?raw:(type==="refresh"?"09:00":type==="provisioning"?"10:30":type==="shipment"?"13:00":type==="return"?"15:00":"11:30");
+  const techNames=useMemo(()=>TECHS.map(t=>t.name),[]);
+
+  const tasks=useMemo(()=>{
+    const out=[];
+    CASES.filter(c=>c.tech&&techNames.includes(c.tech)&&c.sd).forEach(c=>{
+      const d=parseYmd(c.sd);const i=idxByDate(d);if(i===null)return;
+      out.push({id:`RF-${c.id}`,tech:c.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${c.id}`,ref:c.user,module:"refresh.queue"});
+    });
+    auditEvents.forEach(e=>{
+      const d=parseTs(e.ts);const i=idxByDate(d);if(i===null)return;
+      if(e.by==="Lifecycle Automation Engine"&&e.type==="reservation"){
+        const fallback=TECHS[0]?.name||"";
+        if(fallback)out.push({id:`IP-${e.id}`,tech:fallback,day:i,type:"inventory_prep",time:"11:30",title:"Inventory preparation",ref:e.asset,module:"inventory.stock"});
+        return;
+      }
+      const tech=e.by;
+      if(!techNames.includes(tech))return;
+      if(e.type==="provisioning")out.push({id:`PV-${e.id}`,tech,day:i,type:"provisioning",time:timeFor("provisioning",e.ts.slice(11,16)),title:"Device provisioning",ref:e.asset,module:"inventory.stock"});
+      if(e.type==="shipment")out.push({id:`SH-${e.id}`,tech,day:i,type:"shipment",time:timeFor("shipment",e.ts.slice(11,16)),title:"Shipment preparation",ref:e.asset,module:"procurement"});
+      if(["return_received","lease_return"].includes(e.type))out.push({id:`RT-${e.id}`,tech,day:i,type:"return",time:timeFor("return",e.ts.slice(11,16)),title:"Return check-in",ref:e.asset,module:"returns"});
+    });
+    SEED_BK.filter(b=>["submitted","pending_approval","approved"].includes(b.status)).forEach((b,ix)=>{
+      const tech=TECHS[ix%TECHS.length]?.name;const d=parseYmd(b.date)||new Date(monday);const i=idxByDate(d);if(i===null||!tech)return;
+      out.push({id:`BK-${b.id}`,tech,day:i,type:"inventory_prep",time:"11:00",title:"Inventory prep for booking",ref:b.id,module:"inventory.stock"});
+    });
+    return out;
+  },[auditEvents,monday,techNames]);
+
+  const [selectedTech,setSelectedTech]=useState(TECHS[0]?.name||"");
+  const [selectedCell,setSelectedCell]=useState({tech:TECHS[0]?.name||"",day:0});
+  const cellTasks=useMemo(()=>tasks.filter(t=>t.tech===selectedCell.tech&&t.day===selectedCell.day).sort((a,b)=>a.time.localeCompare(b.time)),[tasks,selectedCell]);
+  const dailySchedule=useMemo(()=>tasks.filter(t=>t.tech===selectedTech).sort((a,b)=>a.day===b.day?a.time.localeCompare(b.time):a.day-b.day),[tasks,selectedTech]);
+  const byTechDay=(tech,day)=>tasks.filter(t=>t.tech===tech&&t.day===day).length;
+  const techWeekly=(tech)=>tasks.filter(t=>t.tech===tech).length;
+  // Active offboarding load — distributed evenly across team (no tech assigned)
+  const activeOffboardingCount=useMemo(()=>OFFBOARDING.filter(o=>OFF_ACTIVE_STATUSES.includes(o.status)).length,[]);
+  const offboardingMinutesPerTech=useMemo(()=>{
+    if(!TECHS.length)return 0;
+    // Total team offboarding minutes split evenly; round up so no load is lost
+    return Math.ceil((activeOffboardingCount*OFFBOARDING_WORKLOAD_MINUTES)/TECHS.length);
+  },[activeOffboardingCount]);
+  const capRows=useMemo(()=>TECHS.map(t=>{
+    // Weekly capacity in tasks (cap = tasks/day)
+    const cap=t.cap*5;
+    const sch=techWeekly(t.name);
+    // Convert scheduled tasks to minutes using this tech's avg handle time,
+    // then add their share of offboarding load before computing utilization.
+    // This keeps utilization honest: 1 task ≠ 1 minute.
+    const schedMinutes=sch*t.avg;
+    const totalMinutes=schedMinutes+offboardingMinutesPerTech;
+    const capMinutes=cap*t.avg; // weekly capacity in minutes
+    const util=Math.round((totalMinutes/Math.max(1,capMinutes))*100);
+    const status=util>100?"Overloaded":util<50?"Underutilized":"Normal";
+    return {name:t.name,cap,sch,util,status,offboardingMin:offboardingMinutesPerTech};
+  }),[tasks,offboardingMinutesPerTech]);
+  const typeBreakdown=useMemo(()=>{
+    const map={refresh:0,provisioning:0,shipment:0,return:0,inventory_prep:0};
+    tasks.forEach(t=>{map[t.type]=(map[t.type]||0)+1;});
+    return [
+      {k:"refresh",l:"Refresh Deployments",v:map.refresh,c:C.accent},
+      {k:"provisioning",l:"Provisioning",v:map.provisioning,c:C.orange},
+      {k:"shipment",l:"Shipments",v:map.shipment,c:C.cyan},
+      {k:"return",l:"Returns",v:map.return,c:C.green},
+      {k:"inventory_prep",l:"Inventory Prep",v:map.inventory_prep,c:C.purple},
+    ];
+  },[tasks]);
+  const nearLease=useMemo(()=>regAssets.filter(a=>{if(!a.le||a.le==="\u2014")return false;const d=new Date(`${a.le}T00:00:00`);return !Number.isNaN(d.getTime())&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))<=90&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))>=0;}).length,[regAssets]);
+  const awaitingSchedule=useMemo(()=>CASES.filter(c=>!c.sd||!c.tech).length,[]);
+  const pendingReturns=useMemo(()=>CASES.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[regAssets]);
+  const maxType=Math.max(1,...typeBreakdown.map(x=>x.v));
+  const typeLabel={refresh:"Refresh",provisioning:"Provisioning",shipment:"Shipment",return:"Return",inventory_prep:"Inventory Prep"};
+  const typeBg={refresh:C.accentSoft,provisioning:C.orangeSoft,shipment:C.cyanSoft,return:C.greenSoft,inventory_prep:C.purpleSoft};
+  const typeCol={refresh:C.accent,provisioning:C.orange,shipment:C.cyan,return:C.green,inventory_prep:C.purple};
+
+  return (<>
+    <SH color={C.accent} badge="Operations Workload Planner">Weekly Workload Grid</SH>
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:10,overflowX:"auto"}}>
+      <table style={{width:"100%",minWidth:760}}>
+        <thead><tr>{["Technician",...weekdays,"Weekly Total"].map(h=><th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase",borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+        <tbody>{TECHS.map((t,i)=><tr key={t.id}><td style={{padding:"7px 8px",fontSize:12,fontWeight:600,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}>{t.name}</td>{weekdays.map((_,d)=>{const n=byTechDay(t.name,d);const active=selectedCell.tech===t.name&&selectedCell.day===d;return <td key={d} onClick={()=>{setSelectedCell({tech:t.name,day:d});setSelectedTech(t.name);}} style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer",background:active?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><span style={{fontFamily:MN,fontWeight:700,color:n>0?C.accent:C.light}}>{n}</span></td>;})}<td style={{padding:"7px 8px",fontFamily:MN,fontWeight:700,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}>{techWeekly(t.name)}</td></tr>)}</tbody>
+      </table>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:10,marginTop:10}}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{fontSize:12.5,fontWeight:700}}>Daily Technician Schedule</div><select value={selectedTech} onChange={e=>setSelectedTech(e.target.value)} style={{...inp,width:200,padding:"5px 8px"}}>{TECHS.map(t=><option key={t.id}>{t.name}</option>)}</select></div>
+        {dailySchedule.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks scheduled this week.</div>:dailySchedule.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{width:72,fontFamily:MN,fontSize:10,color:C.muted}}>{fmtDay(t.day)}</span><span style={{width:44,fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:typeBg[t.type],color:typeCol[t.type],fontWeight:600,fontFamily:MN}}>{typeLabel[t.type]}</span><span style={{fontSize:11.5,flex:1}}>{t.title}</span><button onClick={()=>go(t.module)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,fontSize:10.5,cursor:"pointer"}}>Open</button></div>)}
+      </div>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Cell Detail: {selectedCell.tech} Ã¢â‚¬Â¢ {fmtDay(selectedCell.day)}</div>
+        {cellTasks.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks in selected cell.</div>:cellTasks.map(t=><div key={t.id} style={{padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11.5,fontWeight:500}}>{t.title}</span><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span></div><div style={{fontSize:10,color:C.muted}}>{t.ref}</div></div>)}
+      </div>
+    </div>
+
+    <SH color={C.orange}>Capacity Monitoring</SH>
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:10,overflowX:"auto"}}>
+      <table style={{width:"100%",minWidth:760}}>
+        <thead><tr>{["Technician","Weekly Capacity","Tasks Scheduled","Offboarding Min","Utilization %","Status"].map(h=><th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase",borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+        <tbody>{capRows.map((r,i)=><tr key={r.name}><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontWeight:600}}>{r.name}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}>{r.cap}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}>{r.sch}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.offboardingMin>0?C.amber:C.muted}}>{r.offboardingMin}m</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.util>100?C.red:r.util<50?C.amber:C.green}}>{r.util}%</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:r.status==="Overloaded"?C.redSoft:r.status==="Underutilized"?C.amberSoft:C.greenSoft,color:r.status==="Overloaded"?C.red:r.status==="Underutilized"?C.amber:C.green,fontWeight:600}}>{r.status}</span></td></tr>)}</tbody>
+      </table>
+    </div>
+
+    <SH color={C.purple}>Work Type Breakdown</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        {typeBreakdown.map(r=><div key={r.k} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><span style={{width:130,fontSize:10.5,color:C.sub}}>{r.l}</span><div style={{flex:1,height:8,background:C.chartGrid,borderRadius:6}}><div style={{height:"100%",width:`${(r.v/maxType)*100}%`,background:r.c,borderRadius:6}}/></div><span style={{width:24,textAlign:"right",fontFamily:MN,fontSize:10.5}}>{r.v}</span></div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+        {typeBreakdown.map(r=><Kpi key={r.k} label={r.l} value={r.v} color={r.c}/>)}
+      </div>
+    </div>
+
+    <SH color={C.red}>Pipeline Forecast</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+      <Kpi label="Assets Near Lease Expiration" value={nearLease} sub="<= 90 days" color={C.amber} onClick={()=>go("refresh.queue")}/>
+      <Kpi label="Refresh Cases Awaiting Scheduling" value={awaitingSchedule} color={C.accent} onClick={()=>go("refresh.queue")}/>
+      <Kpi label="Pending Device Returns" value={pendingReturns} color={C.red} onClick={()=>go("returns")}/>
+    </div>
+    <div style={{marginTop:8,display:"flex",gap:6}}>
+      <button onClick={()=>go("refresh.techs")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:11,cursor:"pointer"}}>Open Technician Workflow</button>
+      <button onClick={()=>go("automation")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:11,cursor:"pointer"}}>Open Lifecycle Automation</button>
+      <button onClick={()=>go("inventory.stock")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>Open Inventory</button>
+    </div>
+  </>);
+}
+
+function TeamWorkloadView({go,cases,auditEvents}){
+  const [expandedTech,setExpandedTech]=useState(TECHS[0]?.name||null);
+  const typeStyle={
+    refresh:{label:"Refresh",color:C.accent,bg:C.accentSoft,border:C.accentBorder,route:"refresh.queue"},
+    provisioning:{label:"Provision",color:C.orange,bg:C.orangeSoft,border:C.orangeBorder,route:"refresh.queue"},
+    returns:{label:"Returns",color:C.red,bg:C.redSoft,border:C.redBorder,route:"returns"},
+    inventory:{label:"Inventory",color:C.purple,bg:C.purpleSoft,border:C.purpleBorder,route:"inventory.bookings"},
+    offboarding:{label:"Offboarding",color:C.amber,bg:C.amberSoft,border:C.amberBorder,route:"offboarding"},
+  };
+  // Active offboarding cases (no tech assigned — distributed evenly across team)
+  const activeOffboarding=useMemo(()=>OFFBOARDING.filter(o=>OFF_ACTIVE_STATUSES.includes(o.status)),[]);
+  const techWorkload=useMemo(()=>TECHS.map((tech,techIdx)=>{
+    const refreshTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&c.sd&&!["deploy_complete","checked_in","closed"].includes(c.status)).map(c=>({id:`R-${c.id}`,type:"refresh",title:`Refresh appointment ${c.id}`,detail:`${c.user} · ${c.sd}`,route:"refresh.queue"}));
+    const provisioningTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&["reserved","provisioning","shipped"].includes(c.status)).map(c=>({id:`P-${c.id}`,type:"provisioning",title:`Provision device ${c.id}`,detail:`${c.at||"\u2014"} · ${c.user}`,route:"refresh.queue"}));
+    const returnTasks=cases.filter(c=>c.tech===tech.name&&((c.type==="return_case"&&!["closed"].includes(c.status))||["return_pending","checked_in"].includes(c.status))).map(c=>({id:`T-${c.id}`,type:"returns",title:`Return processing ${c.id}`,detail:`${c.at||"\u2014"} · ${CASE_STATUS[c.status]?.l||RF_S[c.status]?.s||c.status}`,route:"returns"}));
+    const inventoryTasks=auditEvents.filter(e=>e.by===tech.name&&e.type==="reservation").map(e=>({id:`I-${e.id}`,type:"inventory",title:`Inventory reservation ${e.asset}`,detail:`${e.user||"\u2014"} · ${AUD_TYPE[e.type]?.l||e.type}`,route:"inventory.stock"}));
+    // Distribute unassigned offboarding cases round-robin across technicians
+    const offboardingTasks=activeOffboarding.filter((_,i)=>i%TECHS.length===techIdx).map(o=>({id:`OB-${o.id}`,type:"offboarding",title:`Offboarding: ${o.user}`,detail:`${o.taskId||"\u2014"} · ${OFF_STAT[o.status]?.l||o.status}`,route:"offboarding"}));
+    const tasks=[...refreshTasks,...provisioningTasks,...returnTasks,...inventoryTasks,...offboardingTasks];
+    return {tech,tasks,counts:{refresh:refreshTasks.length,provisioning:provisioningTasks.length,returns:returnTasks.length,inventory:inventoryTasks.length,offboarding:offboardingTasks.length},total:tasks.length};
+  }),[cases,auditEvents,activeOffboarding]);
+
+  return (<>
+    <SH color={C.purple} badge={`${techWorkload.length} technicians`}>Team Workload</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
+      {techWorkload.map(({tech,tasks,counts,total})=>{
+        const expanded=expandedTech===tech.name;
+        return (
+          <div key={tech.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,overflow:"hidden"}}>
+            <button onClick={()=>setExpandedTech(expanded?null:tech.name)} style={{width:"100%",textAlign:"left",padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",color:C.text}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700}}>{tech.name}</div>
+                  {total===0&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>No active assignments</div>}
+                  <div style={{fontSize:10.5,color:C.muted}}>{tech.role} · {tech.home}</div>
+                </div>
+                <span style={{fontFamily:MN,fontSize:18,fontWeight:700,color:total?C.accent:C.muted}}>{total}</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
+                {Object.entries(counts).map(([key,value])=>(
+                  <div key={key} style={{padding:"6px 8px",borderRadius:6,background:typeStyle[key].bg,border:`1px solid ${typeStyle[key].border}40`}}>
+                    <div style={{fontSize:9,fontFamily:MN,color:typeStyle[key].color,textTransform:"uppercase"}}>{typeStyle[key].label}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:typeStyle[key].color}}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </button>
+            {expanded&&<div style={{padding:"0 14px 12px",borderTop:`1px solid ${C.border}`}}>
+              {tasks.length===0?<div style={{paddingTop:10,fontSize:11,color:C.muted}}>No active assigned tasks right now.</div>:tasks.map(task=>(
+                <div key={task.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${C.borderLight}`}}>
+                  <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:typeStyle[task.type].bg,color:typeStyle[task.type].color,fontWeight:600,fontFamily:MN}}>{typeStyle[task.type].label}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:11.5,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.title}</div>
+                    <div style={{fontSize:10,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.detail}</div>
+                  </div>
+                  <button onClick={()=>go(task.route)} style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,cursor:"pointer"}}>Open</button>
+                </div>
+              ))}
+            </div>}
+          </div>
+        );
+      })}
+    </div>
+  </>);
+}
+
+function OperationsAlertsExceptionCenter({go,setToast,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
+  const regAssets=assets;
+  const today=useMemo(()=>new Date(`${toLocalISODate()}T00:00:00`),[]);
+  const parseYmd=(s)=>{if(!s||s==="—")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
+  const daysLate=(d,allow=0)=>{if(!d)return 0;const raw=Math.floor((today-d)/(1000*60*60*24));return Math.max(0,raw-allow);};
+  const sevColor={Critical:C.red,High:C.orange,Medium:C.amber,Low:C.gray};
+  const sevBg={Critical:C.redSoft,High:C.orangeSoft,Medium:C.amberSoft,Low:C.graySoft};
+  const [selId,setSelId]=useState(null);
+
+  const refreshOverdue=useMemo(()=>CASES.filter(c=>c.sd&&["scheduled","provisioning","pending_contact","follow_up"].includes(c.status)&&daysLate(parseYmd(c.sd),0)>0).map(c=>({id:`AL-REF-${c.id}`,type:"Overdue Refresh Appointment",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Refresh Pipeline",days:daysLate(parseYmd(c.sd),0),sev:daysLate(parseYmd(c.sd),0)>7?"Critical":"High",action:"Escalate and reschedule",route:"refresh.queue"})),[today]);
+  const notReturned=useMemo(()=>CASES.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).map(c=>({id:`AL-RTN-${c.id}`,type:"Device Not Returned",asset:c.at,user:c.user,tech:c.tech||"Unassigned",source:"Return Processing",days:daysLate(parseYmd(c.sd),10),sev:daysLate(parseYmd(c.sd),10)>20?"Critical":"High",action:"Issue return escalation + manager notice",route:"returns"})),[today]);
+  const stuckState=useMemo(()=>regAssets.filter(a=>["pending_return","repair","in_transit","reserved"].includes(a.status)).map(a=>{const days=daysLate(parseYmd(a.seen||a.pd),30);if(days<=0)return null;return {id:`AL-STK-${a.tag}`,type:"Asset Stuck in Lifecycle State",asset:a.tag,user:a.user||"\u2014",tech:"\u2014",source:"Asset Registry",days,sev:days>60?"Critical":"Medium",action:`Review ${a.status} queue and clear blocker`,route:"registry"};}).filter(Boolean),[regAssets,today]);
+  const shortages=useMemo(()=>INV.filter(i=>i.q<i.r).map(i=>({id:`AL-INV-${i.s}`,type:"Inventory Shortage",asset:i.s,user:null,tech:"Inventory Team",source:"Inventory",days:Math.max(1,i.r-i.q),sev:i.q===0?"High":"Medium",action:"Create replenishment PO / reallocate stock",route:"inventory.stock"})),[]);
+  const noTracking=useMemo(()=>auditEvents.filter(e=>e.type==="shipment"&&(!e.detail.toLowerCase().includes("tracking")&&!e.detail.toLowerCase().includes("label"))).map(e=>({id:`AL-SHP-${e.id}`,type:"Shipment Without Tracking",asset:e.asset,user:e.user,tech:e.by||null,source:"Shipment Tracking",days:Math.max(1,daysLate(new Date(e.ts.replace(" ","T")),1)),sev:"High",action:"Attach carrier tracking ID and notify user",route:"audit"})),[auditEvents,today]);
+  const compliance=useMemo(()=>auditEvents.filter(e=>e.type==="compliance"||e.detail.toLowerCase().includes("non-compliant")).map(e=>({id:`AL-CMP-${e.id}`,type:"Compliance / Audit Anomaly",asset:e.asset,user:e.user,tech:e.by||null,source:"Audit Events",days:Math.max(0,daysLate(new Date(e.ts.replace(" ","T")),0)),sev:e.detail.toLowerCase().includes("non-compliant")?"High":"Medium",action:"Open remediation task and owner follow-up",route:"audit"})),[auditEvents,today]);
+
+  const alerts=useMemo(()=>[...refreshOverdue,...notReturned,...stuckState,...shortages,...noTracking,...compliance].sort((a,b)=>b.days-a.days),[refreshOverdue,notReturned,stuckState,shortages,noTracking,compliance]);
+  const selected=alerts.find(a=>a.id===selId)||alerts[0]||null;
+  const priCounts=useMemo(()=>({Critical:alerts.filter(a=>a.sev==="Critical").length,High:alerts.filter(a=>a.sev==="High").length,Medium:alerts.filter(a=>a.sev==="Medium").length,Low:alerts.filter(a=>a.sev==="Low").length}),[alerts]);
+
+  const sla=useMemo(()=>{
+    const breachContact=CASES.filter(c=>["pending_contact","follow_up"].includes(c.status)&&c.dte<=90).length;
+    const breachShip=CASES.filter(c=>["scheduled","provisioning"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),3)>0).length;
+    const breachReturn=CASES.filter(c=>["deploy_complete","return_pending"].includes(c.status)&&c.sd&&daysLate(parseYmd(c.sd),10)>0).length;
+    const avgCycle=Math.round((TECHS.reduce((a,t)=>a+t.avg,0)/TECHS.length)*0.28*10)/10;
+    const offenders=TECHS.map(t=>({name:t.name,v:CASES.filter(c=>c.tech===t.name&&["return_pending","follow_up","scheduled"].includes(c.status)).length})).sort((a,b)=>b.v-a.v).slice(0,3);
+    return {breachContact,breachShip,breachReturn,avgCycle,offenders};
+  },[today]);
+
+  return (<>
+    <SH color={C.red} badge="Operations Alerts & Exception Center">Exception Dashboard</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+      <Kpi label="Overdue Refresh Appointments" value={refreshOverdue.length} color={C.orange} onClick={()=>go("refresh.queue")}/>
+      <Kpi label="Devices Not Returned" value={notReturned.length} color={C.red} onClick={()=>go("returns")} alert={notReturned.length>0}/>
+      <Kpi label="Assets Stuck in Lifecycle" value={stuckState.length} color={C.amber} onClick={()=>go("registry")}/>
+      <Kpi label="Inventory Shortages" value={shortages.length} color={C.purple} onClick={()=>go("inventory.stock")}/>
+      <Kpi label="Shipments Without Tracking" value={noTracking.length} color={C.cyan} onClick={()=>go("audit")}/>
+      <Kpi label="Compliance / Audit Anomalies" value={compliance.length} color={C.red} onClick={()=>go("audit")} alert={compliance.length>0}/>
+    </div>
+
+    <SH color={C.accent}>Active Alerts Table</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr",gap:10}}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,overflow:"auto"}}>
+        <table style={{width:"100%",minWidth:980}}>
+          <thead><tr>{["Alert Type","Asset Tag","User","Technician","Source System","Days Overdue","Recommended Action"].map(h=><th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{alerts.length===0&&<tr><td colSpan={7} style={{padding:20,textAlign:"center",color:C.muted}}>No active alerts.</td></tr>}
+            {alerts.map((a,i)=><tr key={a.id} onClick={()=>setSelId(a.id)} style={{cursor:"pointer"}}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:sevBg[a.sev],color:sevColor[a.sev],fontWeight:700,fontFamily:MN,marginRight:6}}>{a.sev}</span>{a.type}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,color:C.accent,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.asset||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.user||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.tech||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.source}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,fontWeight:700,color:a.days>10?C.red:C.amber,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.days}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.action}</td></tr>)}
+          </tbody>
+        </table>
+      </div>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Alert Detail & Drill-down</div>
+        {!selected?<div style={{fontSize:11,color:C.muted}}>Select an alert row.</div>:<>
+          <div style={{fontSize:11,padding:"2px 6px",display:"inline-block",borderRadius:4,background:sevBg[selected.sev],color:sevColor[selected.sev],fontWeight:700,fontFamily:MN}}>{selected.sev}</div>
+          <div style={{marginTop:6,fontSize:13,fontWeight:600}}>{selected.type}</div>
+          <div style={{fontSize:11,color:C.muted,fontFamily:MN,marginTop:2}}>{selected.id}</div>
+          <div style={{marginTop:8,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+            {[["Asset",selected.asset||"—"],["User",selected.user||"—"],["Technician",selected.tech||"—"],["Source",selected.source],["Days Overdue",String(selected.days)],["Action",selected.action]].map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11.5,fontWeight:500,maxWidth:180,textAlign:"right"}}>{v}</span></div>)}
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+            <button onClick={()=>go(selected.route)} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:11,cursor:"pointer"}}>Open Related Record</button>
+            <button onClick={()=>go("ops")} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:11,cursor:"pointer"}}>Open Workload Planner</button>
+            <button onClick={()=>{setToast(`Escalation created for ${selected.id}`);go("audit");}} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:11,cursor:"pointer"}}>Escalate to Audit</button>
+          </div>
+        </>}
+      </div>
+    </div>
+
+    <SH color={C.orange}>SLA Monitoring</SH>
+    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:10}}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>SLA Breaches by Lifecycle Stage</div>
+        {[["Contact user within 5 days of lease detection",sla.breachContact,C.amber],["Ship replacement within 3 days of scheduling",sla.breachShip,C.orange],["Return device within 10 days of refresh completion",sla.breachReturn,C.red]].map(([l,v,col])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5,maxWidth:320}}>{l}</span><span style={{fontFamily:MN,fontWeight:700,color:col}}>{v}</span></div>)}
+        <div style={{marginTop:8,fontSize:11,color:C.muted}}>Average lifecycle cycle time: <strong style={{color:C.text}}>{sla.avgCycle} days</strong></div>
+      </div>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Worst Offenders</div>
+        {sla.offenders.map(o=><div key={o.name} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5}}>{o.name}</span><span style={{fontFamily:MN,fontWeight:700,color:o.v>2?C.red:C.amber}}>{o.v} open risks</span></div>)}
+      </div>
+    </div>
+
+    <SH color={C.purple}>Alert Prioritization</SH>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+      {["Critical","High","Medium","Low"].map(s=><div key={s} style={{background:C.surface,border:`1px solid ${C.border}`,borderLeft:`4px solid ${sevColor[s]}`,borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN,textTransform:"uppercase"}}>{s}</div><div style={{fontSize:24,fontWeight:700,color:sevColor[s]}}>{priCounts[s]}</div></div>)}
+    </div>
+  </>);
+}
+
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// UNIFIED CASE MANAGEMENT LAYER
+// Model + statuses + seed data + queue + create form + detail drawer
+// with bidirectional asset linking and operational workflow actions
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// â”€â”€â”€ CASE TYPES + STATUS CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// CASE_TYPES, CASE_STATUS — via createCaseDomain(C) from ./features/cases/domain.js
+
+const CASE_PRI={critical:{l:"Critical",c:C.red},high:{l:"High",c:C.orange},medium:{l:"Medium",c:C.amber},low:{l:"Low",c:C.gray}};
+const CSChip=({s})=>{const x=CASE_STATUS[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):(<span style={{fontSize:10,color:C.muted}}>{s}</span>);};
+const CTChip=({t})=>{const x=CASE_TYPES[t];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}>{x.icon} {x.l}</span>):null;};
+const CPChip=({p})=>{const x=CASE_PRI[p];return x?(<span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:x.c+"14",color:x.c,fontWeight:700,fontFamily:MN}}>{x.l}</span>):null;};
+
+const LABEL_STATUS={
+  none:       {l:"No Label",       c:C.muted,  bg:"transparent"},
+  pending:    {l:"Pending",        c:C.amber,  bg:C.amberSoft},
+  created:    {l:"Label Created",  c:C.cyan,   bg:C.cyanSoft},
+  voided:     {l:"Voided",         c:C.red,    bg:C.redSoft},
+  in_transit: {l:"In Transit",     c:C.accent, bg:C.accentSoft},
+  delivered:  {l:"Delivered",      c:C.green,  bg:C.greenSoft},
+};
+// Null shipment — used as the default for any refresh case that has no label yet.
+// Build a populated mock shipment object — stands in for the FedEx API response
+const mockShipment=(direction,caseRecord,overrides={})=>{
+  const now=toLocalTimestamp();
+  const isReturn=direction==="return";
+  return {
+    ...NULL_SHIPMENT,
+    labelStatus:"created",
+    trackingNumber:mockTrackingNumber(),
+    serviceType:"FEDEX_GROUND",
+    carrier:"FedEx",
+    createdAt:now,
+    createdBy:"Current User",
+    recipientName:isReturn?"ITAM Warehouse — Charlotte (PTC)":(caseRecord?.userId||""),
+    recipientAddress:isReturn?"5765 Flat Rock Rd, Charlotte NC 28217":(caseRecord?.locationId||""),
+    shipFromAddress:isReturn?(caseRecord?.locationId||"User Location"):"Charlotte, NC (PTC)",
+    weight:"5 lbs",
+    masterTrackingNumber:"",
+    ...overrides,
+  };
+};
+
+// ─── REFRESH EMAIL TEMPLATES ──────────────────────────────────────────────────
+// Frontend-only for now. Each template is a function that takes a case record
+// and returns { subject, body } with all case-specific fields interpolated.
+//
+// FUTURE INTEGRATION HOOK:
+//   sendRefreshEmail(cs, templateKey) → look up template → call email service
+//   e.g. POST /api/email  { to: cs.userId, subject, body }
+//        or Power Automate flow trigger
+//        or ServiceNow notification API
+// ─────────────────────────────────────────────────────────────────────────────
+const REFRESH_EMAIL_TEMPLATES={
+  refresh_notification:{
+    label:"Refresh Notification",
+    // Triggered at: new → contacted
+    // Advances status: yes (new → contacted)
+    advancesTo:"contacted",
+    build:(cs)=>({
+      subject:`Your device refresh is scheduled — Action Required`,
+      body:`Hi ${cs.userId||"there"},\n\nYour current device${cs.assetId?` (${cs.assetId})`:" "} has been identified for refresh. Our IT Asset Management team will be reaching out to coordinate a convenient appointment.\n\nPlease keep an eye out for a calendar invite or follow-up email. If you have any questions or scheduling preferences, reply to this message.\n\nCase Reference: ${cs.id}\nOffice / Location: ${cs.locationId||"TBD"}\nTechnician: ${cs.tech||"ITAM Team"}\n\nThank you,\nIT Asset Management`,
+    }),
+  },
+  appointment_reminder:{
+    label:"Appointment Reminder",
+    // Triggered at: appointment_booked (reminder, no status change)
+    advancesTo:null,
+    build:(cs)=>({
+      subject:`Reminder: Upcoming device refresh appointment`,
+      body:`Hi ${cs.userId||"there"},\n\nThis is a friendly reminder about your upcoming device refresh appointment.\n\nAppointment Date: ${cs.appointmentDate||"TBD"}\nLocation: ${cs.locationId||"TBD"}\nTechnician: ${cs.tech||"ITAM Team"}\nCase Reference: ${cs.id}\n\nPlease have your current device (${cs.assetId||"on file"}) powered on and accessible at the time of your appointment. Your new device will be ready for handoff.\n\nIf you need to reschedule, please contact us as soon as possible.\n\nThank you,\nIT Asset Management`,
+    }),
+  },
+  return_reminder:{
+    label:"Return Reminder",
+    // Triggered at: awaiting_return (no status change — nudge email)
+    advancesTo:null,
+    build:(cs)=>({
+      subject:`Action Required: Please return your old device`,
+      body:`Hi ${cs.userId||"there"},\n\nThank you for completing your device refresh! We're now awaiting return of your previous device.\n\nDevice to Return: ${cs.assetId||"on file"}\nReturn Tracking #: ${cs.returnShipment?.trackingNumber||cs.shipmentId||"Label emailed separately"}\n\nPlease ship your old device using the prepaid label provided. If you did not receive a return label, reply to this email and we'll resend it.\n\nCase Reference: ${cs.id}\n\nThank you,\nIT Asset Management`,
+    }),
+  },
+};
+
+// â”€â”€â”€ SEED CASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const SEED_CASES=[
+  {id:"CS-2026-0001",type:"onboarding",status:"scheduled",priority:"medium",created:"2026-03-01",due:"2026-03-10",tech:"Anthony Cousin",requestor:"HR Onboarding",userId:"Taylor Whitfield",assetId:"",replacementId:"",locationId:"Charlotte (PTC)",notes:"New hire start Mar 10.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-01 09:00",type:"created",by:"HR Onboarding",detail:"Case created"},{ts:"2026-03-02 14:00",type:"status_change",by:"Anthony Cousin",detail:"Scheduled for Mar 10"}]},
+  {id:"CS-2026-0002",type:"onboarding",status:"in_progress",priority:"high",created:"2026-03-04",due:"2026-03-06",tech:"Micah Harris",requestor:"HR Onboarding",userId:"Hannah Price",assetId:"",replacementId:"",locationId:"Atlanta (ATL)",notes:"Virtual session.",shipmentId:"888910552103",ticketId:"",procurementId:"",events:[{ts:"2026-03-04 08:00",type:"created",by:"HR",detail:"Onboarding created"},{ts:"2026-03-06 10:00",type:"status_change",by:"Micah Harris",detail:"Session started"}]},
+  {id:"CS-2026-0003",type:"refresh",status:"appointment_booked",priority:"high",created:"2026-02-20",due:"2026-03-18",tech:"Jonathan Gamble",requestor:"Refresh Engine",userId:"Cara Warren",assetId:"TP-2744",replacementId:"",locationId:"Atlanta (ATL)",notes:"ThinkPad X1 Gen 9 — lease expiring.",shipmentId:"",ticketId:"",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT},events:[{ts:"2026-02-20 02:00",type:"created",by:"Refresh Engine",detail:"Auto: lease exp 86d"},{ts:"2026-03-05 10:00",type:"status_change",by:"Jonathan Gamble",detail:"Notification sent, appointment booked Mar 18 ATL"}]},
+  {id:"CS-2026-0004",type:"refresh",status:"provisioning",priority:"high",created:"2026-02-15",due:"2026-03-20",tech:"Anthony Cousin",requestor:"Refresh Engine",userId:"Angus Gambill",assetId:"TY-2580",replacementId:"",locationId:"Charlotte (PTC)",notes:"Device provisioned. Autopilot registered.",shipmentId:"",ticketId:"",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT},events:[{ts:"2026-02-15 02:00",type:"created",by:"Refresh Engine",detail:"Auto-created"},{ts:"2026-03-15 14:00",type:"status_change",by:"Anthony Cousin",detail:"Device issued and provisioning in progress"}]},
+  {id:"CS-2026-0005",type:"offboarding",status:"followup_2_sent",priority:"high",created:"2026-02-14",due:"2026-02-28",tech:"",requestor:"Help Desk",userId:"Ava Jones",assetId:"PF4244WV",replacementId:"",locationId:"Scottsdale (SCO)",notes:"No response 15+ days. SCTASK0221608.",shipmentId:"",ticketId:"SCTASK0221608",procurementId:"",events:[{ts:"2026-02-14 09:00",type:"created",by:"Help Desk",detail:"Offboarding from AD disable"},{ts:"2026-03-01 09:00",type:"status_change",by:"ITAM Coordinator",detail:"Follow-up 2 sent: no response"}]},
+  {id:"CS-2026-0006",type:"offboarding",status:"label_sent",priority:"medium",created:"2026-02-17",due:"2026-03-03",tech:"",requestor:"Help Desk",userId:"Ruth Lopez",assetId:"PF3LN9T4",replacementId:"",locationId:"Plano (TX)",notes:"SCTASK0223036.",shipmentId:"888843359119",ticketId:"SCTASK0223036",procurementId:"",events:[{ts:"2026-02-17 09:00",type:"created",by:"Help Desk",detail:"Offboarding created"},{ts:"2026-02-17 14:00",type:"status_change",by:"ITAM Coordinator",detail:"Initial email sent with return label"}]},
+  {id:"CS-2026-0007",type:"break_fix",status:"repair_in_progress",priority:"high",created:"2026-02-19",due:"2026-03-19",tech:"Michael Girardi",requestor:"Help Desk",userId:"Tina Walters",assetId:"0F37Q6G24053FB",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 5 — at Microsoft. MS-4820193.",shipmentId:"",ticketId:"MS-4820193",procurementId:"",events:[{ts:"2026-02-19 10:00",type:"created",by:"Help Desk",detail:"Break-fix created"},{ts:"2026-02-22 14:00",type:"status_change",by:"Michael Girardi",detail:"Sent to MS repair"},{ts:"2026-03-04 09:00",type:"status_change",by:"System",detail:"MS: repair in progress"}]},
+  {id:"CS-2026-0008",type:"break_fix",status:"ticket_submitted",priority:"medium",created:"2026-03-05",due:"2026-03-19",tech:"Jon Dinh",requestor:"Help Desk",userId:"Thomas Reed",assetId:"0F339FB25033GT",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 6 — will not boot.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-05 15:00",type:"created",by:"Help Desk",detail:"Device will not boot. Potential PSU failure."}]},
+  {id:"CS-2026-0009",type:"return_case",status:"in_transit",priority:"medium",created:"2026-03-03",due:"2026-03-13",tech:"Anthony Cousin",requestor:"ITAM Coordinator",userId:"Sam Vives",assetId:"TP-2801",replacementId:"",locationId:"Charlotte (PTC)",notes:"Refresh old device. FX-RTN-2026-0045.",shipmentId:"FX-RTN-2026-0045",ticketId:"",procurementId:"",events:[{ts:"2026-03-03 10:00",type:"created",by:"ITAM Coordinator",detail:"Return for refresh device"},{ts:"2026-03-03 14:00",type:"shipment",by:"System",detail:"FedEx label sent"}]},
+  {id:"CS-2026-0010",type:"return_case",status:"received",priority:"low",created:"2026-02-28",due:"2026-03-10",tech:"Warehouse Tech",requestor:"ITAM Coordinator",userId:"Lynn Sailors",assetId:"TP-2654",replacementId:"",locationId:"Charlotte (PTC)",notes:"Scanned. Condition: Good.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-02-28 09:00",type:"created",by:"ITAM Coordinator",detail:"Return created"},{ts:"2026-03-05 16:30",type:"status_change",by:"Warehouse Tech",detail:"Scanned. Good condition."}]},
+  {id:"CS-2026-0011",type:"procurement_exception",status:"pending_approval",priority:"medium",created:"2026-03-04",due:"2026-03-18",tech:"",requestor:"Derek Simmons",userId:"Derek Simmons",assetId:"",replacementId:"",locationId:"Scottsdale (SCO)",notes:"MacBook M4 Pro request for ML workload.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-04 11:00",type:"created",by:"Derek Simmons",detail:"Exception: MacBook M4 Pro"},{ts:"2026-03-04 14:00",type:"note",by:"IT Manager",detail:"Reviewing justification."}]},
+  {id:"CS-2026-0012",type:"offboarding",status:"escalated",priority:"critical",created:"2025-03-10",due:"2025-04-10",tech:"",requestor:"Help Desk",userId:"Daija Francis",assetId:"PF3F4DBR",replacementId:"",locationId:"Atlanta (ATL)",notes:"365+ days. Multiple follow-ups. SCTASK0189091.",shipmentId:"881217933140",ticketId:"SCTASK0189091",procurementId:"",events:[{ts:"2025-03-10 09:00",type:"created",by:"Help Desk",detail:"Offboarding created"},{ts:"2026-02-20 16:00",type:"status_change",by:"ITAM Coordinator",detail:"Escalated. 365+ days."}]},
+];
+
+// â”€â”€â”€ CASE HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _caseSeq=12;
+const nextCaseId=()=>{_caseSeq++;return `CS-${new Date().getFullYear()}-${String(_caseSeq).padStart(4,"0")}`;};
+const nowTs=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
+const addEvent=(cs,type,by,detail)=>({...cs,events:[...cs.events,{ts:nowTs(),type,by,detail}]});
+// Bidirectional lookup: cases linked to an asset
+const casesForAsset=(cases,assetId)=>assetId?cases.filter(c=>c.assetId===assetId||c.replacementId===assetId):[];
+
+// â”€â”€â”€ CASE MANAGEMENT MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId,onConsumeSelection,onConsumePrefill,onCaseTransition,currentNav,onOpenAsset,assets=[],onUpdateAsset}){
+  const [tab,setTab]=useState(prefill?"create":"queue");
+  const [sel,setSel]=useState(null);
+  const [typeF,setTypeF]=useState("all");
+  const [stF,setStF]=useState("all");
+  const [q,setQ]=useState("");
+  const [page,setPage]=useState(0);
+  const [replacementSearchCreate,setReplacementSearchCreate]=useState("");
+  const [replacementSearchDrawer,setReplacementSearchDrawer]=useState("");
+  const [replacementDraft,setReplacementDraft]=useState("");
+  const [refreshExecDraft,setRefreshExecDraft]=useState({shipmentId:"",shipmentCarrier:"",shipmentStatus:"not_ready",appointmentDate:"",appointmentStatus:"not_scheduled",returnExpected:false,returnFollowUpStatus:"not_started"});
+  const [returnIntakeDraft,setReturnIntakeDraft]=useState({returnReceivedDate:"",intakeCondition:"good",intakeNotes:"",intakeDisposition:"inventory"});
+  const PG=50;
+  const initForm={type:"onboarding",priority:"medium",userId:"",assetId:"",replacementId:"",locationId:"",tech:"",due:"",notes:"",ticketId:"",shipmentId:"",shipmentCarrier:"",shipmentStatus:"not_ready",appointmentDate:"",appointmentStatus:"not_scheduled",returnExpected:false,returnFollowUpStatus:"not_started",returnReceivedDate:"",intakeCondition:"good",intakeNotes:"",intakeDisposition:"inventory",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT}};
+  const [form,setForm]=useState(prefill?{...initForm,...prefill}:initForm);
+  useEffect(()=>{
+    if(prefill){
+      setForm({...initForm,...prefill});
+      setTab("create");
+      if(onConsumePrefill)onConsumePrefill();
+      return;
+    }
+    if(tab==="create")setForm(initForm);
+  },[prefill,tab,onConsumePrefill]);
+  // Keep internal tab in sync with sidebar nav at all times:
+  //   cases.create           → "create" (blank form if no prefill)
+  //   cases / cases.all      → "queue"  (always — this was the missing branch)
+  useEffect(()=>{
+    if(currentNav==="cases.create"){
+      if(!prefill){setTab("create");setForm(initForm);}
+    } else if(currentNav==="cases"||currentNav==="cases.all"){
+      setTab("queue");
+    }
+  },[currentNav,prefill]);
+
+  // Counts
+  const typeCounts=useMemo(()=>{const c={};cases.forEach(cs=>{c[cs.type]=(c[cs.type]||0)+1;});return c;},[cases]);
+  const stCounts=useMemo(()=>{const c={};const fl=typeF==="all"?cases:cases.filter(cs=>cs.type===typeF);fl.forEach(cs=>{c[cs.status]=(c[cs.status]||0)+1;});return c;},[cases,typeF]);
+  const openCases=cases.filter(cs=>!["completed","closed","canceled","rejected"].includes(cs.status)).length;
+  const overdueCases=cases.filter(cs=>{if(["completed","closed","canceled","rejected"].includes(cs.status))return false;if(!cs.due)return false;return new Date(cs.due+"T00:00:00")<new Date();}).length;
+  const assetByTag=useMemo(()=>new Map(assets.map(asset=>[asset.tag,asset])),[assets]);
+  const activeReplacementCaseByTag=useMemo(()=>{
+    const map=new Map();
+    cases.forEach(cs=>{
+      if(cs.type==="refresh"&&cs.replacementId&&!CLOSED_CASE_STATUSES.includes(cs.status))map.set(cs.replacementId,cs.id);
+    });
+    return map;
+  },[cases]);
+
+  // Filter + paginate
+  const filt=useMemo(()=>{let l=cases;if(typeF!=="all")l=l.filter(cs=>cs.type===typeF);if(stF!=="all")l=l.filter(cs=>cs.status===stF);if(q.trim()){const lq=q.toLowerCase();l=l.filter(cs=>cs.id.toLowerCase().includes(lq)||cs.userId.toLowerCase().includes(lq)||(cs.assetId||"").toLowerCase().includes(lq)||(cs.tech||"").toLowerCase().includes(lq));}return l;},[cases,typeF,stF,q]);
+  useEffect(()=>{setPage(0);},[typeF,stF,q]);
+  const pageData=filt.slice(page*PG,(page+1)*PG);
+  const det=sel?cases.find(cs=>cs.id===sel):null;
+  useEffect(()=>{
+    if(!selectedCaseId)return;
+    const target=cases.find(cs=>cs.id===selectedCaseId);
+    if(!target){setSel(null);if(onConsumeSelection)onConsumeSelection();return;}
+    setTab("queue");
+    setSel(target.id);
+    setTypeF("all");
+    setStF("all");
+    setQ("");
+    const idx=filt.findIndex(cs=>cs.id===target.id);
+    setPage(idx>=0?Math.floor(idx/PG):0);
+    if(onConsumeSelection)onConsumeSelection();
+  },[selectedCaseId,cases,filt,PG,onConsumeSelection]);
+  useEffect(()=>{setReplacementSearchCreate("");},[form.type]);
+  useEffect(()=>{
+    setReplacementSearchDrawer("");
+    setReplacementDraft(det?.replacementId||"");
+  },[det]);
+  useEffect(()=>{
+    setRefreshExecDraft({
+      shipmentId:det?.shipmentId||"",
+      shipmentCarrier:det?.shipmentCarrier||"",
+      shipmentStatus:det?.shipmentStatus||"not_ready",
+      appointmentDate:det?.appointmentDate||"",
+      appointmentStatus:det?.appointmentStatus||"not_scheduled",
+      returnExpected:Boolean(det?.returnExpected),
+      returnFollowUpStatus:det?.returnFollowUpStatus||"not_started"
+    });
+  },[det]);
+  useEffect(()=>{
+    setReturnIntakeDraft({
+      returnReceivedDate:det?.returnReceivedDate||"",
+      intakeCondition:det?.intakeCondition||"good",
+      intakeNotes:det?.intakeNotes||"",
+      intakeDisposition:det?.intakeDisposition||"inventory"
+    });
+  },[det]);
+  const isReplacementAssetEligible=(asset,selectedTag,currentCaseId)=>{
+    if(!asset)return false;
+    if(selectedTag&&asset.tag===selectedTag)return true;
+    if(asset.status!=="inventory")return false;
+    if(asset.reservation)return false;
+    const linkedCaseId=activeReplacementCaseByTag.get(asset.tag);
+    return !linkedCaseId||linkedCaseId===currentCaseId;
+  };
+  const getReplacementOptions=(selectedTag,search,currentCaseId)=>{
+    const term=String(search||"").trim().toLowerCase();
+    return assets.filter(asset=>{
+      if(!isReplacementAssetEligible(asset,selectedTag,currentCaseId))return false;
+      if(!term)return true;
+      return `${asset.tag} ${asset.model} ${asset.office} ${asset.status}`.toLowerCase().includes(term);
+    }).sort((a,b)=>a.tag.localeCompare(b.tag,undefined,{numeric:true}));
+  };
+  const getReplacementSummary=(tag)=>tag?assetByTag.get(tag)||null:null;
+  const releaseReplacementAsset=(tag,caseId)=>{
+    if(!tag||!onUpdateAsset)return;
+    const stillHeld=cases.some(cs=>cs.id!==caseId&&cs.type==="refresh"&&!CLOSED_CASE_STATUSES.includes(cs.status)&&cs.replacementId===tag);
+    if(stillHeld)return;
+    onUpdateAsset(tag,asset=>{
+      const heldUser=String(asset.user||"").startsWith("\u2192");
+      return {...asset,status:"inventory",reservation:null,user:heldUser?"\u2014":asset.user,dept:heldUser?"\u2014":asset.dept};
+    },[createAssetActivityEntry({asset:tag,label:"Reservation cleared",detail:`Refresh reservation released from ${caseId||"draft refresh case"}`,by:"Case Management"})]);
+  };
+  const reserveReplacementAsset=(tag,caseData)=>{
+    if(!tag||!onUpdateAsset)return;
+    onUpdateAsset(tag,asset=>({...asset,status:"reserved",reservation:{type:"refresh",label:`Reserved for ${caseData.id}`,ref:caseData.id,ts:toLocalTimestamp()},user:caseData.userId?`\u2192 ${caseData.userId}`:asset.user,office:caseData.locationId||asset.office,dept:String(asset.user||"").startsWith("\u2192")?"\u2014":asset.dept}),[createAssetActivityEntry({asset:tag,label:"Reserved for refresh",detail:`Reserved via ${caseData.id}${caseData.assetId?` for ${caseData.assetId}`:""}`,by:"Case Management"})]);
+  };
+  const applyReplacementSelection=(caseData,nextReplacementId)=>{
+    const currentReplacementId=caseData.replacementId||"";
+    const nextTag=String(nextReplacementId||"").trim();
+    if(currentReplacementId&&currentReplacementId!==nextTag)releaseReplacementAsset(currentReplacementId,caseData.id);
+    if(nextTag&&currentReplacementId!==nextTag)reserveReplacementAsset(nextTag,{...caseData,replacementId:nextTag});
+  };
+  const saveCaseReplacement=(cs,nextReplacementId)=>{
+    const nextTag=String(nextReplacementId||"").trim();
+    if(nextTag===(cs.replacementId||"")){setToast(nextTag?`Replacement asset already set to ${nextTag}`:`No replacement asset selected for ${cs.id}`);return;}
+    if(nextTag){
+      const asset=assetByTag.get(nextTag);
+      if(!asset){setToast(`Replacement asset ${nextTag} was not found.`);return;}
+      if(!isReplacementAssetEligible(asset,cs.replacementId,cs.id)){setToast(`${nextTag} is not currently available for refresh.`);return;}
+    }
+    applyReplacementSelection(cs,nextTag);
+    setCases(prev=>prev.map(item=>item.id!==cs.id?item:addEvent({...item,replacementId:nextTag},"note","Current User",nextTag?`Replacement asset reserved: ${nextTag}`:`Replacement asset cleared${cs.replacementId?`: ${cs.replacementId}`:""}`)));
+    setReplacementDraft(nextTag);
+    setToast(nextTag?`Reserved ${nextTag} for ${cs.id}`:`Cleared replacement asset for ${cs.id}`);
+  };
+  const formReplacementOptions=useMemo(()=>form.type==="refresh"?getReplacementOptions(form.replacementId,replacementSearchCreate,null):[],[form.type,form.replacementId,replacementSearchCreate,assets,activeReplacementCaseByTag]);
+  const drawerReplacementOptions=useMemo(()=>det?.type==="refresh"?getReplacementOptions(replacementDraft||det.replacementId,replacementSearchDrawer,det.id):[],[det,replacementDraft,replacementSearchDrawer,assets,activeReplacementCaseByTag]);
+  const selectedFormReplacement=getReplacementSummary(form.replacementId);
+  const selectedDrawerReplacement=getReplacementSummary(replacementDraft||det?.replacementId);
+  // ─── Phase 2: case actions via createCaseActions (from ./features/cases/actions.js) ───
+  const {
+    caseActionDetailed, caseAction, caseUpdate,
+    saveRefreshExecution, markRefreshReadyToShip, markRefreshShipped,
+    scheduleRefreshAppointment, markRefreshAppointmentComplete, markRefreshReturnPending,
+    createOutboundLabel, createReturnLabel, voidOutboundLabel, voidReturnLabel,
+    saveReturnIntakeFields, applyReturnAssetDispositionClean,
+    markCaseReturnReceived, completeReturnIntake, sendRefreshEmail,
+  } = createCaseActions({
+    cases, setCases, setToast, onCaseTransition, onUpdateAsset,
+    refreshExecDraft, setRefreshExecDraft,
+    returnIntakeDraft, setReturnIntakeDraft,
+    transitionValidation, isAllowedTransition, CASE_STATUS, CASE_TYPES,
+    addEvent, mockShipment, toLocalTimestamp, toLocalISODate,
+    createAssetActivityEntry, REFRESH_EMAIL_TEMPLATES,
+  });
+
+  // Create case (stays inline - tightly coupled to form state, tab navigation, replacement selection)
+  const submitCase=()=>{
+    if(!form.userId&&form.type!=="procurement_exception"){setToast("User is required.");return;}
+    if(form.type==="refresh"&&form.replacementId){
+      const selectedReplacement=assetByTag.get(form.replacementId);
+      if(!selectedReplacement){setToast(`Replacement asset ${form.replacementId} was not found.`);return;}
+      if(!isReplacementAssetEligible(selectedReplacement,"",null)){setToast(`${form.replacementId} is not currently available for refresh.`);return;}
+    }
+    const now=toLocalISODate();
+    const nc={id:nextCaseId(),type:form.type,status:"new",priority:form.priority,created:now,due:form.due||"",tech:form.tech||"",requestor:"Current User",userId:form.userId,assetId:form.assetId,replacementId:form.replacementId,locationId:form.locationId,notes:form.notes,shipmentId:form.shipmentId,shipmentCarrier:form.shipmentCarrier,shipmentStatus:form.shipmentStatus,appointmentDate:form.appointmentDate,appointmentStatus:form.appointmentStatus,returnExpected:form.returnExpected,returnFollowUpStatus:form.returnFollowUpStatus,returnReceivedDate:form.returnReceivedDate,intakeCondition:form.intakeCondition,intakeNotes:form.intakeNotes,intakeDisposition:form.intakeDisposition,ticketId:form.ticketId,procurementId:form.procurementId,events:[{ts:nowTs(),type:"created",by:"Current User",detail:`${CASE_TYPES[form.type]?.l} case created`},...(form.type==="refresh"&&form.replacementId?[{ts:nowTs(),type:"note",by:"Current User",detail:`Replacement asset reserved: ${form.replacementId}`}]:[])]};
+    setCases(prev=>[nc,...prev]);
+    if(nc.type==="refresh"&&nc.replacementId)applyReplacementSelection(nc,nc.replacementId);
+    setToast(`Case ${nc.id} created`);setSel(nc.id);setTab("queue");setForm(initForm);setReplacementSearchCreate("");
+  };
+
+
+  // â”€â”€ Inline edit state for operational fields â”€â”€
+  const [editField,setEditField]=useState(null);
+  const [editVal,setEditVal]=useState("");
+
+  // â”€â”€ Render operational actions based on case type + status â”€â”€
+  const renderOpsActions=(cs)=>{
+    const closed=["completed","closed","canceled","rejected"].includes(cs.status);
+    if(closed)return <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>Case closed</div>;
+    const btns=[];
+    const ab=(label,color,onClick)=>btns.push(<button key={label} onClick={onClick} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${color}40`,background:color+"14",color,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{label}</button>);
+
+    if(cs.type==="refresh"){
+      // ── Step 1: Send Refresh Notification (new → contacted) ──────────────
+      if(cs.status==="new")
+        ab("Send Refresh Notification",C.cyan,()=>sendRefreshEmail(cs,"refresh_notification"));
+      // ── Step 2: Record Appointment (contacted → appointment_pending) ──────
+      if(cs.status==="contacted")
+        ab("Record Appointment",C.cyan,()=>caseAction(cs.id,"appointment_pending"));
+      // ── Step 3: Confirm Appointment Booking (appointment_pending → appointment_booked) ─
+      if(cs.status==="appointment_pending"){
+        ab("Confirm Appointment",C.cyan,()=>scheduleRefreshAppointment(cs));
+        ab("Send Appt Reminder",C.amber,()=>sendRefreshEmail(cs,"appointment_reminder"));
+      }
+      // ── Step 4: Create Outbound Label (appointment_booked → label_created) ─
+      if(cs.status==="appointment_booked")
+        ab("Create Outbound Label",C.purple,()=>{createOutboundLabel(cs);caseAction(cs.id,"label_created");});
+      // ── Step 5: Issue Device (label_created → device_issued) ──────────────
+      if(cs.status==="label_created")
+        ab("Issue Device",C.orange,()=>caseAction(cs.id,"device_issued"));
+      // ── Step 6: Mark Provisioning (device_issued → provisioning) ──────────
+      if(cs.status==="device_issued")
+        ab("Mark Provisioning",C.orange,()=>caseAction(cs.id,"provisioning"));
+      // ── Step 7: Mark Shipped (provisioning → shipped) ─────────────────────
+      if(cs.status==="provisioning")
+        ab("Mark Shipped",C.accent,()=>markRefreshShipped(cs));
+      // ── Step 8: Mark Appointment Complete (shipped → appointment_complete) ─
+      if(cs.status==="shipped")
+        ab("Mark Appointment Complete",C.green,()=>caseActionDetailed(cs.id,"appointment_complete",{},"","Refresh appointment completed — device handed off"));
+      // ── Step 9: Create Return Label + Mark Awaiting Return ─────────────────
+      if(cs.status==="appointment_complete"){
+        ab("Create Return Label",C.cyan,()=>createReturnLabel(cs));
+        if(cs.returnShipment?.trackingNumber)
+          ab("Mark Awaiting Return",C.red,()=>caseAction(cs.id,"awaiting_return"));
+      }
+      // ── Step 10: Mark Returned (awaiting_return → returned) ───────────────
+      if(cs.status==="awaiting_return"){
+        ab("Send Return Reminder",C.amber,()=>sendRefreshEmail(cs,"return_reminder"));
+        ab("Mark Returned",C.cyan,()=>caseAction(cs.id,"returned"));
+      }
+      // ── Step 11: Complete Case (returned → completed → closed) ────────────
+      if(cs.status==="returned")
+        ab("Complete Case",C.green,()=>caseAction(cs.id,"completed"));
+      if(cs.status==="completed")
+        ab("Close Case",C.green,()=>caseAction(cs.id,"closed"));
+    }
+    if(cs.type==="offboarding"){
+      // Loop 1
+      if(cs.status==="new")ab("Send Label",C.cyan,()=>caseAction(cs.id,"label_sent"));
+      if((cs.status==="label_sent"||cs.status==="awaiting_movement")&&(cs.recoveryLoop||1)===1)ab("Follow-Up 1",C.amber,()=>caseAction(cs.id,"followup_1_sent"));
+      if(cs.status==="followup_1_sent")ab("Follow-Up 2",C.orange,()=>caseAction(cs.id,"followup_2_sent"));
+      if(cs.status==="followup_2_sent")ab("Mark Needs Review",C.red,()=>caseAction(cs.id,"needs_review"));
+      if(cs.status==="needs_review")ab("Start Investigation",C.purple,()=>caseAction(cs.id,"investigating"));
+      // Loop 2
+      if((cs.status==="label_sent"||cs.status==="awaiting_movement")&&cs.recoveryLoop===2)ab("Secondary F/U 1",C.amber,()=>caseAction(cs.id,"secondary_followup_1"));
+      if(cs.status==="secondary_followup_1")ab("Secondary F/U 2",C.orange,()=>caseAction(cs.id,"secondary_followup_2"));
+      // Terminal
+      if(["secondary_followup_2","followup_2_sent","needs_review","investigating","escalated"].includes(cs.status))ab("Escalate",C.red,()=>caseAction(cs.id,"escalated"));
+      if(!["resolved","closed","new"].includes(cs.status))ab("Mark Resolved",C.green,()=>caseAction(cs.id,"resolved"));
+      if(cs.status==="resolved")ab("Close",C.gray,()=>caseAction(cs.id,"closed"));
+    }
+    if(cs.type==="break_fix"){
+      if(cs.status==="new")ab("Submit Ticket",C.gray,()=>{setEditField({id:cs.id,f:"ticketId"});setEditVal("");});
+      if(cs.status==="ticket_submitted")ab("Vendor Review",C.amber,()=>caseAction(cs.id,"vendor_review",{},!cs.ticketId?"Vendor ticket # required":null));
+      if(cs.status==="vendor_review")ab("Approve Repair",C.cyan,()=>caseAction(cs.id,"repair_approved"));
+      if(cs.status==="repair_approved")ab("Mark In Progress",C.orange,()=>caseAction(cs.id,"repair_in_progress"));
+      if(cs.status==="repair_in_progress"){ab("Device Returned",C.green,()=>caseAction(cs.id,"device_returned"));ab("Issue Replacement",C.accent,()=>caseAction(cs.id,"replacement_issued"));}
+      if(["device_returned","replacement_issued"].includes(cs.status))ab("Close",C.green,()=>caseAction(cs.id,"closed"));
+    }
+    if(cs.type==="return_case"){
+      if(cs.status==="new")ab("Send Label",C.cyan,()=>{setEditField({id:cs.id,f:"shipmentId"});setEditVal("");});
+      if(cs.status==="label_sent")ab("Mark In Transit",C.orange,()=>caseAction(cs.id,"in_transit"));
+      if(cs.status==="in_transit")ab("Mark Received",C.green,()=>caseAction(cs.id,"received"));
+      if(cs.status==="received")ab("Inspecting",C.amber,()=>caseAction(cs.id,"inspecting"));
+      if(cs.status==="inspecting")ab("Stage for LFS",C.purple,()=>caseAction(cs.id,"staged_for_lfs"));
+      if(cs.status==="staged_for_lfs")ab("Close",C.green,()=>caseAction(cs.id,"closed"));
+    }
+    if(cs.type==="onboarding"){
+      if(cs.status==="new")ab("Schedule",C.cyan,()=>caseAction(cs.id,"pending_scheduling"));
+      if(cs.status==="pending_scheduling")ab("Confirm Schedule",C.cyan,()=>caseAction(cs.id,"scheduled"));
+      if(cs.status==="scheduled")ab("Start Session",C.accent,()=>caseAction(cs.id,"in_progress"));
+      if(cs.status==="in_progress")ab("Complete",C.green,()=>caseAction(cs.id,"completed"));
+    }
+    if(cs.type==="procurement_exception"){
+      if(cs.status==="new")ab("Submit for Approval",C.amber,()=>caseAction(cs.id,"pending_approval"));
+      if(cs.status==="pending_approval"){ab("Approve",C.green,()=>caseAction(cs.id,"approved"));ab("Reject",C.red,()=>caseAction(cs.id,"rejected"));}
+      if(cs.status==="approved")ab("Mark Ordered",C.accent,()=>caseAction(cs.id,"ordered"));
+      if(cs.status==="ordered")ab("Mark Received",C.green,()=>caseAction(cs.id,"received"));
+      if(cs.status==="received")ab("Close",C.green,()=>caseAction(cs.id,"closed"));
+    }
+    // Always add cancel
+    if(!closed)ab("Cancel Case",C.gray,()=>caseAction(cs.id,"canceled"));
+    return <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{btns}</div>;
+  };
+
+  return (<>
+    <div style={{display:"flex",gap:6,marginBottom:14}}>
+      <button onClick={()=>{setTab("queue");setSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${tab==="queue"?C.accent:C.border}`,background:tab==="queue"?C.accentSoft:C.surface,color:tab==="queue"?C.accent:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>Case Queue ({cases.length})</button>
+      <button onClick={()=>{setTab("create");setForm(initForm);if(onConsumePrefill)onConsumePrefill();}} style={{padding:"6px 14px",borderRadius:6,border:"none",background:tab==="create"?C.accent:C.green,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Create Case</button>
+    </div>
+
+    {/* â•â•â•â•â•â• QUEUE â•â•â•â•â•â• */}
+    {tab==="queue"&&(<>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Total" value={cases.length} color={C.accent}/><Kpi label="Open" value={openCases} color={C.amber}/><Kpi label="Overdue" value={overdueCases} color={C.red} alert={overdueCases>0}/>
+        {Object.entries(CASE_TYPES).map(([k,v])=>(<Kpi key={k} label={v.l} value={typeCounts[k]||0} color={v.c} onClick={()=>{setTypeF(typeF===k?"all":k);setStF("all");setSel(null);}}/>))}
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:6,flexWrap:"wrap"}}>
+        <button onClick={()=>{setTypeF("all");setStF("all");setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF==="all"?C.accent:C.border}`,background:typeF==="all"?C.accentSoft:C.surface,color:typeF==="all"?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({cases.length})</button>
+        {Object.entries(CASE_TYPES).map(([k,v])=>{const n=typeCounts[k]||0;return n>0?(<button key={k} onClick={()=>{setTypeF(typeF===k?"all":k);setStF("all");setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${typeF===k?v.c:C.border}`,background:typeF===k?v.bg:C.surface,color:typeF===k?v.c:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{v.icon} {v.l} ({n})</button>):null;})}
+      </div>
+      {typeF!=="all"&&<div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>{(CASE_TYPES[typeF]?.statuses||[]).map(s=>{const n=stCounts[s]||0;return n>0?(<button key={s} onClick={()=>{setStF(stF===s?"all":s);setSel(null);}} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${stF===s?C.accent:C.border}`,background:stF===s?C.accentSoft:C.surface,color:stF===s?C.accent:C.sub,fontSize:10,cursor:"pointer"}}>{CASE_STATUS[s]?.l||s} ({n})</button>):null;})}</div>}
+      <div style={{marginBottom:10}}><div style={{position:"relative",display:"inline-block"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search case, user, asset\u2026" style={{width:260,padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div></div>
+      {/* Table + drawer */}
+      <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
+        <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 440px)"}}>
+          <table style={{width:"100%",minWidth:900}}><thead><tr>{["Case","Type","User","Asset","Status","Priority","Tech","Created","Due"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+            <tbody>{pageData.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No cases match the current filters.</td></tr>}
+              {pageData.map((cs,i)=>(<tr key={cs.id} onClick={()=>setSel(sel===cs.id?null:cs.id)} style={{cursor:"pointer"}}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{cs.id}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CTChip t={cs.type}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{cs.userId||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:cs.assetId?C.sub:C.light}}>{cs.assetId||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CSChip s={cs.status}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CPChip p={cs.priority}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:cs.tech?C.sub:C.light}}>{cs.tech||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{cs.created}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:cs.due&&new Date(cs.due+"T00:00:00")<new Date()&&!["completed","closed","canceled","rejected"].includes(cs.status)?C.red:C.sub}}>{cs.due||"\u2014"}</td></tr>))}</tbody></table>
+        </div>
+        {/* â”€â”€ CASE DETAIL DRAWER â”€â”€ */}
+        {det&&(<div style={{width:400,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 440px)"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.userId||"No user"}</div><div style={{marginTop:5,display:"flex",gap:5,flexWrap:"wrap"}}><CTChip t={det.type}/><CSChip s={det.status}/><CPChip p={det.priority}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+          {/* Operational actions */}
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>ACTIONS</div>
+            {renderOpsActions(det)}
+            {/* Inline edit field for operational updates */}
+            {editField&&editField.id===det.id&&(<div style={{marginTop:8,display:"flex",gap:4,alignItems:"center"}}><input value={editVal} onChange={e=>setEditVal(e.target.value)} placeholder={editField.f==="replacementId"?"Replacement asset tag":editField.f==="shipmentId"?"Tracking #":editField.f==="ticketId"?"Vendor ticket #":"Date (YYYY-MM-DD)"} style={{...inp,flex:1,padding:"5px 8px",fontSize:11}}/><button onClick={()=>{if(!editVal.trim()){setToast("Value required");return;}const f=editField.f;let nextStatus=null;if(f==="replacementId")nextStatus="reserved";if(f==="shipmentId"&&det.type==="refresh")nextStatus="shipped";if(f==="shipmentId"&&(det.type==="offboarding"||det.type==="return_case"))nextStatus="label_sent";if(f==="ticketId")nextStatus="ticket_submitted";if(f==="appointmentDate")nextStatus="scheduled";const updates={[f]:editVal};if(nextStatus){caseAction(det.id,nextStatus,updates);}else{caseUpdate(det.id,updates,`${f}: ${editVal}`);}setEditField(null);setEditVal("");}} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Save</button><button onClick={()=>{setEditField(null);setEditVal("");}} style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:10.5,cursor:"pointer"}}>Cancel</button></div>)}
+          </div>
+          {det.type==="refresh"&&<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>REPLACEMENT ASSET</div>
+            <input value={replacementSearchDrawer} onChange={e=>setReplacementSearchDrawer(e.target.value)} placeholder="Search available inventory by tag or model" style={{...inp,marginBottom:8}}/>
+            <select value={replacementDraft} onChange={e=>setReplacementDraft(e.target.value)} style={inp}>
+              <option value="">No replacement selected</option>
+              {drawerReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} · {asset.model} · {asset.office}</option>)}
+            </select>
+            {drawerReplacementOptions.length===0&&<div style={{fontSize:10.5,color:C.muted,marginTop:6}}>No eligible inventory assets are currently available for this refresh case.</div>}
+            {selectedDrawerReplacement&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:6,background:C.panel,border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedDrawerReplacement.tag} · {selectedDrawerReplacement.model}</div>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedDrawerReplacement.office} · {REG_ST[selectedDrawerReplacement.status]?.l||selectedDrawerReplacement.status}</div>
+            </div>}
+            <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+              <button onClick={()=>saveCaseReplacement(det,replacementDraft)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{det.replacementId?"Update Reservation":"Reserve Replacement"}</button>
+              {det.replacementId&&<button onClick={()=>saveCaseReplacement(det,"")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Clear Replacement</button>}
+            </div>
+          </div>}
+          {det.type==="refresh"&&<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:10}}>SHIPMENT LABELS</div>
+            {/* ── Outbound label panel ── */}
+            {(()=>{
+              const ob=det.outboundShipment||NULL_SHIPMENT;
+              const obSt=LABEL_STATUS[ob.labelStatus||"none"];
+              const hasLabel=ob.labelStatus==="created"||ob.labelStatus==="in_transit"||ob.labelStatus==="delivered";
+              const isVoided=ob.labelStatus==="voided";
+              return (
+                <div style={{marginBottom:10,padding:"10px 12px",borderRadius:7,border:`1px solid ${C.border}`,background:C.panel}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2197"} Outbound Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(replacement → user)</span></div>
+                    <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:obSt.c||C.muted,background:obSt.bg||"transparent",fontFamily:MN}}>{obSt.l}</span>
+                  </div>
+                  {hasLabel&&<div style={{marginBottom:6}}>
+                    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TRACKING #</div><span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600}}>{ob.trackingNumber}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>SERVICE</div><span style={{fontSize:11,color:C.sub}}>{ob.serviceType}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TO</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ob.recipientAddress||"—"}</span></div>
+                    </div>
+                    {ob.createdAt&&<div style={{fontSize:9.5,color:C.muted,marginTop:4}}>Created {ob.createdAt} by {ob.createdBy}</div>}
+                    {isVoided&&ob.voidedAt&&<div style={{fontSize:9.5,color:C.red,marginTop:2}}>Voided {ob.voidedAt} by {ob.voidedBy}</div>}
+                  </div>}
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {!hasLabel&&!isVoided&&<button onClick={()=>createOutboundLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Create Outbound Label</button>}
+                    {hasLabel&&<button onClick={()=>voidOutboundLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Void</button>}
+                    {isVoided&&<button onClick={()=>createOutboundLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Recreate Outbound Label</button>}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* ── Return label panel ── */}
+            {(()=>{
+              const ret=det.returnShipment||NULL_SHIPMENT;
+              const retSt=LABEL_STATUS[ret.labelStatus||"none"];
+              const hasLabel=ret.labelStatus==="created"||ret.labelStatus==="in_transit"||ret.labelStatus==="delivered";
+              const isVoided=ret.labelStatus==="voided";
+              return (
+                <div style={{marginBottom:10,padding:"10px 12px",borderRadius:7,border:`1px solid ${C.border}`,background:C.panel}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2198"} Return Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(old device → warehouse)</span></div>
+                    <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:retSt.c||C.muted,background:retSt.bg||"transparent",fontFamily:MN}}>{retSt.l}</span>
+                  </div>
+                  {hasLabel&&<div style={{marginBottom:6}}>
+                    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TRACKING #</div><span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600}}>{ret.trackingNumber}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>SERVICE</div><span style={{fontSize:11,color:C.sub}}>{ret.serviceType}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>FROM</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ret.shipFromAddress||"—"}</span></div>
+                    </div>
+                    {ret.createdAt&&<div style={{fontSize:9.5,color:C.muted,marginTop:4}}>Created {ret.createdAt} by {ret.createdBy}</div>}
+                    {isVoided&&ret.voidedAt&&<div style={{fontSize:9.5,color:C.red,marginTop:2}}>Voided {ret.voidedAt} by {ret.voidedBy}</div>}
+                  </div>}
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {!hasLabel&&!isVoided&&<button onClick={()=>createReturnLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Create Return Label</button>}
+                    {hasLabel&&<button onClick={()=>voidReturnLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Void</button>}
+                    {isVoided&&<button onClick={()=>createReturnLabel(det)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Recreate Return Label</button>}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* ── Appointment + execution fields ── */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:4}}>
+              <FF label="Appointment Date/Time"><input type="datetime-local" value={refreshExecDraft.appointmentDate} onChange={e=>setRefreshExecDraft(d=>({...d,appointmentDate:e.target.value}))} style={inp}/></FF>
+              <FF label="Appointment Status"><select value={refreshExecDraft.appointmentStatus} onChange={e=>setRefreshExecDraft(d=>({...d,appointmentStatus:e.target.value}))} style={inp}>{Object.entries(APPT_STAT).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+              <FF label="Return Follow-Up"><select value={refreshExecDraft.returnFollowUpStatus} onChange={e=>setRefreshExecDraft(d=>({...d,returnFollowUpStatus:e.target.value}))} style={inp}>{Object.entries(RETURN_FOLLOW_UP).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+              <FF label="Shipment Status (legacy)"><select value={refreshExecDraft.shipmentStatus} onChange={e=>setRefreshExecDraft(d=>({...d,shipmentStatus:e.target.value}))} style={inp}>{Object.entries(SHIP_STAT).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:7,marginTop:8,fontSize:11,color:C.sub}}>
+              <input type="checkbox" checked={refreshExecDraft.returnExpected} onChange={e=>setRefreshExecDraft(d=>({...d,returnExpected:e.target.checked}))} style={{accentColor:C.accent}}/>
+              Return expected from prior device
+            </label>
+            <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+              <button onClick={()=>saveRefreshExecution(det,refreshExecDraft,"Refresh execution details updated")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Save Execution</button>
+              <button onClick={()=>markRefreshReadyToShip(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Ready to Ship</button>
+              <button onClick={()=>markRefreshShipped(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Shipped</button>
+              <button onClick={()=>scheduleRefreshAppointment(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Schedule Appointment</button>
+              <button onClick={()=>markRefreshAppointmentComplete(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Appointment Complete</button>
+              <button onClick={()=>markRefreshReturnPending(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Return Pending</button>
+            </div>
+          </div>}
+          {((det.type==="refresh"&&["awaiting_return","returned","return_pending","return_received"].includes(det.status))||(det.type==="return_case"&&["in_transit","received","inspecting","staged_for_lfs"].includes(det.status)))&&<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>RETURN INTAKE</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+              <FF label="Received Date"><input type="date" value={returnIntakeDraft.returnReceivedDate} onChange={e=>setReturnIntakeDraft(d=>({...d,returnReceivedDate:e.target.value}))} style={inp}/></FF>
+              <FF label="Condition"><select value={returnIntakeDraft.intakeCondition} onChange={e=>setReturnIntakeDraft(d=>({...d,intakeCondition:e.target.value}))} style={inp}>{Object.entries(INTAKE_COND).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+            </div>
+            <FF label="Intake Notes"><textarea value={returnIntakeDraft.intakeNotes} onChange={e=>setReturnIntakeDraft(d=>({...d,intakeNotes:e.target.value}))} rows={2} placeholder="Condition, accessories, damage, and intake notes" style={{...inp,marginTop:8,resize:"vertical",fontFamily:SN}}/></FF>
+            <FF label="Disposition" w="100%"><select value={returnIntakeDraft.intakeDisposition} onChange={e=>setReturnIntakeDraft(d=>({...d,intakeDisposition:e.target.value}))} style={inp}>{Object.entries(INTAKE_DISP).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+            <div style={{fontSize:10.5,color:C.muted,marginTop:8}}>Original asset: <strong style={{color:C.text}}>{det.assetId||"—"}</strong></div>
+            <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+              <button onClick={()=>markCaseReturnReceived(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Return Received</button>
+              <button onClick={()=>completeReturnIntake(det,"inventory")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Check In to Inventory</button>
+              <button onClick={()=>completeReturnIntake(det,"repair")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Send to Repair</button>
+              <button onClick={()=>completeReturnIntake(det,"retired")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.grayBorder}`,background:C.graySoft,color:C.gray,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Retire Asset</button>
+            </div>
+          </div>}
+          {/* Jump to asset */}
+          {(det.assetId||det.replacementId)&&<div style={{padding:"8px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5}}>
+            {det.assetId&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(det.assetId);else{go("registry");setToast(`Opening ${det.assetId}`);}}} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10,fontWeight:600,cursor:"pointer"}}>View Asset: {det.assetId}</button>}
+            {det.replacementId&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(det.replacementId);else{go("registry");setToast(`Opening ${det.replacementId}`);}}} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10,fontWeight:600,cursor:"pointer"}}>Replacement: {det.replacementId}</button>}
+          </div>}
+          {/* Detail fields */}
+          <div style={{padding:"10px 18px"}}>{[["Case",det.id],["Type",CASE_TYPES[det.type]?.l],["Status",CASE_STATUS[det.status]?.l],["Priority",CASE_PRI[det.priority]?.l],["User",det.userId||"\u2014"],["Asset",det.assetId||"\u2014"],["Replacement",det.replacementId||"\u2014"],["Location",det.locationId||"\u2014"],["Tech",det.tech||"\u2014"],["Requestor",det.requestor],["Created",det.created],["Due",det.due||"\u2014"],["Outbound Tracking",det.outboundShipment?.trackingNumber||det.shipmentId||"\u2014"],["Outbound Status",LABEL_STATUS[det.outboundShipment?.labelStatus||"none"]?.l||"\u2014"],["Return Tracking",det.returnShipment?.trackingNumber||"\u2014"],["Return Label Status",LABEL_STATUS[det.returnShipment?.labelStatus||"none"]?.l||"\u2014"],["Shipment Status",SHIP_STAT[det.shipmentStatus||"not_ready"]?.l||"\u2014"],["Appointment",det.appointmentDate||"\u2014"],["Appointment Status",APPT_STAT[det.appointmentStatus||"not_scheduled"]?.l||"\u2014"],["Return Expected",det.returnExpected?"Yes":"No"],["Return Follow-Up",RETURN_FOLLOW_UP[det.returnFollowUpStatus||"not_started"]?.l||"\u2014"],["Return Received",det.returnReceivedDate||"\u2014"],["Intake Condition",INTAKE_COND[det.intakeCondition||"good"]?.l||"\u2014"],["Disposition",INTAKE_DISP[det.intakeDisposition||"inventory"]?.l||"\u2014"],["Ticket",det.ticketId||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Case","Asset","Replacement","Created","Due","Outbound Tracking","Return Tracking","Appointment","Return Received","Ticket"].includes(l)?MN:SN,color:v==="\u2014"?C.light:C.text,maxWidth:180,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
+          {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>}
+          {/* Events timeline */}
+          {det.events?.length>0&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>HISTORY ({det.events.length})</div><div style={{position:"relative",paddingLeft:14}}><div style={{position:"absolute",left:4,top:5,bottom:5,width:1.5,background:C.borderLight}}/>{[...det.events].reverse().map((ev,i)=>(<div key={i} style={{position:"relative",marginBottom:10}}><div style={{position:"absolute",left:-11.5,top:4,width:7,height:7,borderRadius:"50%",background:i===0?C.accent:C.border,border:`1.5px solid ${i===0?C.accent:C.borderHeavy}`}}/><div style={{fontSize:10,color:C.chartAxis,fontFamily:MN}}>{ev.ts}</div><div style={{fontSize:11.5,fontWeight:500,color:C.text,marginTop:1}}>{ev.detail}</div><div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>by {ev.by}</div></div>))}</div></div>}
+        </div>)}
+      </div>
+    </>)}
+
+    {/* â•â•â•â•â•â• CREATE CASE FORM â•â•â•â•â•â• */}
+    {tab==="create"&&(<div style={{maxWidth:700}}><div style={{background:C.surface,borderRadius:10,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}><div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{fontSize:14,fontWeight:700}}>Create New Case</div></div><div style={{padding:"16px 20px"}}>
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{Object.entries(CASE_TYPES).map(([k,v])=>(<button key={k} onClick={()=>setForm(f=>({...f,type:k}))} style={{padding:"8px 14px",borderRadius:6,border:`1px solid ${form.type===k?v.c:C.border}`,background:form.type===k?v.bg:C.surface,color:form.type===k?v.c:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>{v.icon} {v.l}</button>))}</div>
+      <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}><FF label="Priority"><select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={inp}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></FF><FF label="Due Date"><input type="date" value={form.due} onChange={e=>setForm(f=>({...f,due:e.target.value}))} style={inp}/></FF></div>
+      <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>{form.type!=="procurement_exception"&&<FF label="User *"><input value={form.userId} onChange={e=>setForm(f=>({...f,userId:e.target.value}))} placeholder="Full name" style={inp}/></FF>}{["refresh","break_fix","return_case","offboarding"].includes(form.type)&&<FF label="Asset ID"><input value={form.assetId} onChange={e=>setForm(f=>({...f,assetId:e.target.value}))} placeholder="Tag or serial" style={inp}/></FF>}</div>
+      <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}><FF label="Location"><input value={form.locationId} onChange={e=>setForm(f=>({...f,locationId:e.target.value}))} placeholder="Office" style={inp}/></FF></div>
+      {form.type==="refresh"&&<div style={{marginBottom:14,padding:"12px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:C.panel}}>
+        <div style={{fontSize:11.5,fontWeight:700,color:C.text,marginBottom:4}}>Replacement Asset</div>
+        <div style={{fontSize:10.5,color:C.muted,marginBottom:8}}>Select from currently available inventory. The selected asset will be reserved when the case is created.</div>
+        <input value={replacementSearchCreate} onChange={e=>setReplacementSearchCreate(e.target.value)} placeholder="Search available inventory by tag or model" style={{...inp,marginBottom:8}}/>
+        <select value={form.replacementId} onChange={e=>setForm(f=>({...f,replacementId:e.target.value}))} style={inp}>
+          <option value="">No replacement selected</option>
+          {formReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} · {asset.model} · {asset.office}</option>)}
+        </select>
+        {formReplacementOptions.length===0&&<div style={{fontSize:10.5,color:C.muted,marginTop:6}}>No eligible inventory assets are currently available for reservation.</div>}
+        {selectedFormReplacement&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedFormReplacement.tag} · {selectedFormReplacement.model}</div>
+          <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedFormReplacement.office} · {REG_ST[selectedFormReplacement.status]?.l||selectedFormReplacement.status}</div>
+        </div>}
+        {form.replacementId&&<div style={{marginTop:8}}><button onClick={()=>setForm(f=>({...f,replacementId:""}))} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Clear Replacement</button></div>}
+      </div>}
+      {form.type==="refresh"&&<div style={{marginBottom:14,padding:"12px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:C.panel}}>
+        <div style={{fontSize:11.5,fontWeight:700,color:C.text,marginBottom:4}}>Execution Tracking</div>
+        <div style={{fontSize:10.5,color:C.muted,marginBottom:8}}>Track shipment prep, shipment, appointment progress, and return expectation for this refresh.</div>
+        <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+          <FF label="Tracking #"><input value={form.shipmentId} onChange={e=>setForm(f=>({...f,shipmentId:e.target.value}))} placeholder="FedEx / UPS" style={inp}/></FF>
+          <FF label="Carrier"><input value={form.shipmentCarrier} onChange={e=>setForm(f=>({...f,shipmentCarrier:e.target.value}))} placeholder="FedEx" style={inp}/></FF>
+        </div>
+        <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+          <FF label="Shipment Status"><select value={form.shipmentStatus} onChange={e=>setForm(f=>({...f,shipmentStatus:e.target.value}))} style={inp}>{Object.entries(SHIP_STAT).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+          <FF label="Appointment Date/Time"><input type="datetime-local" value={form.appointmentDate} onChange={e=>setForm(f=>({...f,appointmentDate:e.target.value}))} style={inp}/></FF>
+        </div>
+        <div style={{display:"flex",gap:12,marginBottom:4,flexWrap:"wrap"}}>
+          <FF label="Appointment Status"><select value={form.appointmentStatus} onChange={e=>setForm(f=>({...f,appointmentStatus:e.target.value}))} style={inp}>{Object.entries(APPT_STAT).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+          <FF label="Return Follow-Up"><select value={form.returnFollowUpStatus} onChange={e=>setForm(f=>({...f,returnFollowUpStatus:e.target.value}))} style={inp}>{Object.entries(RETURN_FOLLOW_UP).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:7,fontSize:11,color:C.sub}}>
+          <input type="checkbox" checked={form.returnExpected} onChange={e=>setForm(f=>({...f,returnExpected:e.target.checked}))} style={{accentColor:C.accent}}/>
+          Return expected from prior device
+        </label>
+      </div>}
+      <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>{["refresh","break_fix","return_case","onboarding"].includes(form.type)&&<FF label="Technician"><select value={form.tech} onChange={e=>setForm(f=>({...f,tech:e.target.value}))} style={inp}><option value="">Unassigned</option>{TECHS.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}</select></FF>}{["break_fix"].includes(form.type)&&<FF label="Vendor Ticket #"><input value={form.ticketId} onChange={e=>setForm(f=>({...f,ticketId:e.target.value}))} placeholder="MS-XXXXXXX" style={inp}/></FF>}{["return_case","offboarding"].includes(form.type)&&<FF label="Tracking #"><input value={form.shipmentId} onChange={e=>setForm(f=>({...f,shipmentId:e.target.value}))} placeholder="FedEx/UPS" style={inp}/></FF>}</div>
+      <FF label="Notes"><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} placeholder="Context\u2026" style={{...inp,resize:"vertical",fontFamily:SN}}/></FF>
+      <div style={{display:"flex",gap:8,marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}><button onClick={submitCase} style={{padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Create Case</button><button onClick={()=>{setTab("queue");setForm(initForm);}} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:12,fontWeight:500,cursor:"pointer"}}>Cancel</button></div>
+    </div></div></div>)}
+  </>);
+}
+
+function Placeholder({id,goHome}){const it=navLookupAll[id];return (<div style={{maxWidth:500,margin:"80px auto",textAlign:"center"}}><div style={{width:52,height:52,borderRadius:12,background:C.graySoft,border:`1px solid ${C.grayBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,margin:"0 auto 16px"}}>{it?.icon||navLookupAll[it?.parentId||""]?.icon||"\u2699"}</div><h2 style={{fontSize:18,fontWeight:700,margin:"0 0 8px"}}>{it?.label||id}</h2><p style={{fontSize:13,color:C.sub}}>This module is planned for a future phase.</p><button onClick={goHome} style={{marginTop:16,padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Back to Command Center</button></div>);}
+
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// AMS REGISTRY IMPORT PIPELINE
+// CSV upload â†’ Parse â†’ Normalize â†’ Validate â†’ Stage â†’ Promote to Live
+// Promotion gate: promotion is blocked if any row has a hard validation error.
+// Hard validation rules (block promotion): missing AssetsID, blank Status,
+// duplicate AssetsID, duplicate SerialNumber, unknown status, invalid date.
+// Warning-only (do not block): SerialNumber same as ID/blank, blank model,
+// assigned but no user, missing warranty/RAM.
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// â”€â”€â”€ STATUS MAPPING: AMS Status values â†’ internal platform statuses â”€â”€â”€â”€â”€â”€â”€
+// Hard validation: blank status blocks promotion. Unknown status â†’ raw_unknown_status (preserved in _rawStatus for audit).
+// Map keys are normalized (trimmed, case-insensitive lookup).
+const AMS_STATUS_MAP_RAW={
+  "Assigned":"assigned","Available":"inventory","Refurbished":"inventory","Repair":"repair",
+  "Loaner":"inventory","Loaned Out":"assigned","Discarded":"retired","Unknown":"inventory",
+  "Lost/Stolen":"retired","Unavailable":"repair","Awaiting Return":"pending_return",
+  "Copier Assigned":"assigned","Copier Available":"inventory","Check Printer":"repair",
+  "In Stock":"inventory","Inventory":"inventory","In Use":"assigned","Active":"assigned",
+  "Retired":"retired","Disposed":"retired","Pending Return":"pending_return","Returned":"inventory",
+  "Checked In":"inventory","Reserved":"reserved","Pending Refresh":"pending_refresh",
+  "Refresh Scheduled":"refresh_scheduled","In Transit":"in_transit","Under Repair":"repair",
+};
+const AMS_STATUS_MAP={};
+const normalizeLookupKey=(value)=>String(value||"").toLowerCase().trim().replace(/[_\-\s]+/g," ").replace(/[^\w\s/]/g,"");
+Object.entries(AMS_STATUS_MAP_RAW).forEach(([k,v])=>{AMS_STATUS_MAP[normalizeLookupKey(k)]=v;});
+// Unknown statuses go to explicit bucket; do not default to "inventory". Preserve raw in _rawStatus.
+function normalizeStatus(raw){
+  const s=(raw||"").trim();
+  if(!s)return null;
+  const mapped=AMS_STATUS_MAP[normalizeLookupKey(s)];
+  return mapped!==undefined?mapped:"raw_unknown_status";
+}
+
+// â”€â”€â”€ RAM NORMALIZATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const normalizeRam=(raw)=>{
+  if(!raw)return "\u2014";
+  const s=String(raw).trim().replace(/\s*GB$/i,"");
+  const n=parseInt(s,10);
+  return Number.isFinite(n)&&n>0?n+"GB":"\u2014";
+};
+
+// â”€â”€â”€ DATE NORMALIZATION (AMS normalization assumptions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// No locale-dependent new Date(s) for ambiguous formats. Supported: ISO date-only, ISO timestamp, MM/DD/YYYY (explicit pattern).
+// Returns null for invalid or ambiguous input; do not silently reinterpret.
+function isValidYmd(year,month,day){
+  if(!Number.isInteger(year)||!Number.isInteger(month)||!Number.isInteger(day))return false;
+  if(year<1900||year>2100||month<1||month>12||day<1||day>31)return false;
+  const d=new Date(Date.UTC(year,month-1,day));
+  return d.getUTCFullYear()===year&&d.getUTCMonth()===(month-1)&&d.getUTCDate()===day;
+}
+function normalizeDate(raw){
+  if(raw==null||String(raw).trim()==="")return null;
+  const s=String(raw).trim();
+  if(/^\d{5}(\.\d+)?$/.test(s)){
+    const serial=Math.floor(Number(s));
+    if(Number.isFinite(serial)&&serial>59){
+      const excelEpoch=new Date(Date.UTC(1899,11,30));
+      excelEpoch.setUTCDate(excelEpoch.getUTCDate()+serial);
+      return `${excelEpoch.getUTCFullYear()}-${String(excelEpoch.getUTCMonth()+1).padStart(2,"0")}-${String(excelEpoch.getUTCDate()).padStart(2,"0")}`;
+    }
+  }
+  const isoDateOnly=/^\d{4}-\d{2}-\d{2}$/;
+  if(isoDateOnly.test(s)){
+    const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m)return null;
+    const year=parseInt(m[1],10),month=parseInt(m[2],10),day=parseInt(m[3],10);
+    return isValidYmd(year,month,day)?`${m[1]}-${m[2]}-${m[3]}`:null;
+  }
+  const isoTimestamp=/^(\d{4})-(\d{2})-(\d{2})[T\s]/;
+  const m1=s.match(isoTimestamp);
+  if(m1){
+    const year=parseInt(m1[1],10),month=parseInt(m1[2],10),day=parseInt(m1[3],10);
+    return isValidYmd(year,month,day)?`${m1[1]}-${m1[2]}-${m1[3]}`:null;
+  }
+  const mmddyyyy=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const m2=s.match(mmddyyyy);
+  if(m2){
+    const month=parseInt(m2[1],10);const day=parseInt(m2[2],10);const year=parseInt(m2[3],10);
+    if(isValidYmd(year,month,day)){return `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;}
+  }
+  const mmddyy=/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/;
+  const m3=s.match(mmddyy);
+  if(m3){
+    const month=parseInt(m3[1],10);const day=parseInt(m3[2],10);const year=2000+parseInt(m3[3],10);
+    if(isValidYmd(year,month,day)){return `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;}
+  }
+  const ymdSlash=/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
+  const m4=s.match(ymdSlash);
+  if(m4){
+    const year=parseInt(m4[1],10);const month=parseInt(m4[2],10);const day=parseInt(m4[3],10);
+    if(isValidYmd(year,month,day)){return `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;}
+  }
+  return null;
+}
+function normalizeDateDisplay(raw){const v=normalizeDate(raw);return v==null||v===""?"\u2014":v;}
+
+// â”€â”€â”€ WARRANTY STATUS from expiry date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const warrantyStatus=(we)=>{
+  if(!we||we==="\u2014")return "\u2014";
+  const d=new Date(we+"T00:00:00");if(Number.isNaN(d.getTime()))return "\u2014";
+  const now=new Date();const diff=(d-now)/(1000*60*60*24);
+  if(diff<0)return "expired";if(diff<=90)return "expiring";return "active";
+};
+
+// â”€â”€â”€ LOCATION NORMALIZATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const normalizeLocation=(raw)=>{
+  if(!raw||!raw.trim())return "\u2014";
+  return raw.replace(/- /g,"- ").replace(/\s+/g," ").trim();
+};
+const normalizeAssetKey=(raw)=>String(raw||"").trim().toUpperCase().replace(/\s+/g," ");
+const duplicateRowSignature=(row)=>JSON.stringify([
+  row.id,row.sn,row.model,row.status,row.user,row.office,row.pd,row.we,row.leaseNum,row.ram,row.vendor,row.notes,row.shipAddr
+]);
+
+// â”€â”€â”€ VENDOR INFERENCE from model name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const inferVendor=(model)=>{
+  if(!model)return "\u2014";
+  const m=model.toLowerCase();
+  if(m.includes("surface")||m.includes("microsoft"))return "Microsoft";
+  if(m.includes("thinkpad")||m.includes("lenovo")||m.includes("yoga"))return "Lenovo";
+  if(m.includes("dell")||m.includes("latitude")||m.includes("precision"))return "Dell Technologies";
+  if(m.includes("apple")||m.includes("macbook")||m.includes("iphone")||m.includes("ipad"))return "Apple";
+  if(m.includes("hp ")||m.includes("elitebook")||m.includes("probook"))return "HP Inc.";
+  return "\u2014";
+};
+
+// â”€â”€â”€ CSV PARSER (handles quoted fields, newlines in fields) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const parseCSV=(text)=>{
+  const rows=[];let row=[];let field="";let inQuote=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];const next=text[i+1];
+    if(inQuote){if(ch==='"'&&next==='"'){field+='"';i++;}else if(ch==='"'){inQuote=false;}else{field+=ch;}}
+    else{if(ch==='"'){inQuote=true;}else if(ch===','){row.push(field);field="";}else if(ch==='\r'&&next==='\n'){row.push(field);field="";rows.push(row);row=[];i++;}else if(ch==='\n'){row.push(field);field="";rows.push(row);row=[];}else{field+=ch;}}
+  }
+  if(field||row.length)row.push(field);if(row.length)rows.push(row);
+  return rows;
+};
+
+// â”€â”€â”€ NORMALIZE one AMS CSV row â†’ internal asset record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AMS field mapping: AssetsID, AssetsName, AssetsType, Category, Status, AssetsLocation, AssignedTo,
+// AssignedDate, WarrantyExpiryDate, Notes, AssetModelNumber, SerialNumber, ShippingAddress, LeaseNumber, Ram.
+const AMS_HEADER_ALIASES={
+  AssetsID:["assetsid","asset id","assetid","asset tag","assettag","assets id"],
+  AssetsName:["assetsname","asset name","name","device name"],
+  AssetsType:["assetstype","asset type","type","device type"],
+  Category:["category","asset category"],
+  Status:["status","asset status"],
+  AssetsLocation:["assetslocation","asset location","location","office","site"],
+  AssignedTo:["assignedto","assigned to","user","employee","assigned user"],
+  AssignedDate:["assigneddate","assigned date","purchase date","purchasedate","deployment date"],
+  WarrantyExpiryDate:["warrantyexpirydate","warranty expiry date","warranty expiration date","warranty end","warranty expires"],
+  Notes:["notes","comments","description"],
+  AssetModelNumber:["assetmodelnumber","asset model number","model","model number","device model"],
+  SerialNumber:["serialnumber","serial number","serial","serial no","serial #","sn"],
+  ShippingAddress:["shippingaddress","shipping address","ship address"],
+  LeaseNumber:["leasenumber","lease number","lease"],
+  Ram:["ram","memory"],
+  Department:["department","dept","cost center","costcenter","team","division"],
+};
+const buildHeaderIndex=(headers)=>{
+  const index={};
+  headers.forEach((header,idx)=>{index[normalizeLookupKey(header)]=idx;});
+  return index;
+};
+const normalizeAmsRow=(headers,vals)=>{
+  const headerIndex=buildHeaderIndex(headers);
+  const get=(col)=>{
+    const candidates=AMS_HEADER_ALIASES[col]||[col];
+    for(const candidate of candidates){
+      const idx=headerIndex[normalizeLookupKey(candidate)];
+      if(idx!=null&&idx>=0)return (vals[idx]||"").trim();
+    }
+    return "";
+  };
+  const id=get("AssetsID");
+  const sourceSerial=get("SerialNumber");
+  const sn=sourceSerial||id;
+  const model=get("AssetModelNumber");const rawStatus=get("Status");
+  const weNorm=normalizeDate(get("WarrantyExpiryDate"));const we=weNorm!=null?weNorm:"\u2014";
+  const pdNorm=normalizeDate(get("AssignedDate"));const pd=pdNorm!=null?pdNorm:"\u2014";
+  const statusVal=normalizeStatus(rawStatus);
+  const status=statusVal!=null?statusVal:(rawStatus.trim()===""?"":"raw_unknown_status");
+  const user=status==="assigned"?(get("AssignedTo")||"\u2014"):"\u2014";
+  const dept=get("Department")||"\u2014";
+  const assetsName=get("AssetsName");
+  const assetsType=get("AssetsType");
+  const row={
+    id,tag:id,sn,model:model||"\u2014",cat:get("Category")||"Laptop",
+    assetsName:assetsName||"",assetsType:assetsType||"",
+    status,user,dept,
+    office:normalizeLocation(get("AssetsLocation")),
+    locId:null,pd,
+    we,ws:warrantyStatus(we),
+    le:we,leaseNum:get("LeaseNumber")||"\u2014",
+    ram:normalizeRam(get("Ram")),
+    age:"\u2014",cost:0,cc:"\u2014",
+    vendor:inferVendor(model),
+    intune:"\u2014",seen:"\u2014",cond:"\u2014",
+    rf:false,po:"\u2014",
+    notes:get("Notes")||"",
+    shipAddr:get("ShippingAddress")||"",
+    _idKey:normalizeAssetKey(id),
+    _snKey:normalizeAssetKey(sn),
+    _sourceSerial:sourceSerial,
+    _rawStatus:rawStatus,
+    _rawWe:get("WarrantyExpiryDate"),_rawPd:get("AssignedDate"),
+  };
+  // Derive rf flag: true if warranty/lease ≤ 90d away or already expired, and asset is active
+  const activeStatuses=["assigned","pending_refresh","refresh_scheduled"];
+  const rfDays=weNorm?(Math.floor((new Date(weNorm+"T00:00:00")-new Date())/(1000*60*60*24))):null;
+  row.rf=activeStatuses.includes(row.status)&&rfDays!==null&&rfDays<=90;
+  return row;
+};
+
+// â”€â”€â”€ VALIDATION ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// All normalized rows are validated (including rows missing AssetsID). Summary is based on full input.
+// Hard validation rules (block promotion): missing AssetsID, blank Status, duplicate AssetsID,
+// duplicate SerialNumber, unknown status, invalid date.
+// Warning-only rules: blank/same-as-id SerialNumber, blank model, assigned but no user, missing warranty/RAM.
+const IMPORT_CHUNK_SIZE=500;
+const yieldToUi=()=>new Promise(resolve=>setTimeout(resolve,0));
+const normalizeRowsChunked=async(headers,dataRows,onProgress)=>{
+  const normalized=new Array(dataRows.length);
+  if(dataRows.length===0){onProgress?.(1);return normalized;}
+  for(let i=0;i<dataRows.length;i+=IMPORT_CHUNK_SIZE){
+    const end=Math.min(dataRows.length,i+IMPORT_CHUNK_SIZE);
+    for(let j=i;j<end;j++)normalized[j]=normalizeAmsRow(headers,dataRows[j]);
+    onProgress?.(end/dataRows.length);
+    await yieldToUi();
+  }
+  return normalized;
+};
+const validateImportChunked=async(rows,onProgress)=>{
+  const errors=[];const warnings=[];const idMap=new Map();const snMap=new Map();const skippedRows=new Set();
+  const duplicateAssetIds=[];const duplicateSerials=[];
+  let blankStatuses=0,invalidDates=0,unknownStatuses=0,missingIds=0;
+  if(rows.length===0){onProgress?.(1);}
+  for(let i=0;i<rows.length;i+=IMPORT_CHUNK_SIZE){
+    const end=Math.min(rows.length,i+IMPORT_CHUNK_SIZE);
+    for(let idx=i;idx<end;idx++){
+      const r=rows[idx];
+      const ln=idx+2;
+      const rowSig=duplicateRowSignature(r);
+      let rejectForDuplicate=false;
+      if(!r.id||String(r.id).trim()===""){errors.push({row:ln,field:"AssetsID",msg:"Missing AssetsID"});missingIds++;}
+      if(r._rawStatus===""){errors.push({row:ln,field:"Status",msg:"Blank status"});blankStatuses++;}
+      if(r.status==="raw_unknown_status"){errors.push({row:ln,field:"Status",msg:`Unknown status: "${(r._rawStatus||"").trim()}"`});unknownStatuses++;}
+      const weValid=r._rawWe==null||String(r._rawWe).trim()===""||normalizeDate(r._rawWe)!=null;
+      const pdValid=r._rawPd==null||String(r._rawPd).trim()===""||normalizeDate(r._rawPd)!=null;
+      if(!weValid||!pdValid){errors.push({row:ln,field:!weValid?"WarrantyExpiryDate":"AssignedDate",msg:"Invalid date"});invalidDates++;}
+      if(r._idKey){
+        const seenId=idMap.get(r._idKey);
+        if(seenId){
+          if(seenId.sig===rowSig){
+            warnings.push({row:ln,field:"AssetsID",msg:`Duplicate export row ignored: ${r.id}`});
+            duplicateAssetIds.push(r.id);
+            rejectForDuplicate=true;
+          }
+          else{
+            warnings.push({row:ln,field:"AssetsID",msg:`Duplicate ID rejected from staging: ${r.id}`});
+            duplicateAssetIds.push(r.id);
+            rejectForDuplicate=true;
+          }
+        }else{idMap.set(r._idKey,{sig:rowSig,row:ln});}
+      }
+      const hasSourceSerial=Boolean(r._sourceSerial&&String(r._sourceSerial).trim()!=="");
+      if(hasSourceSerial&&r._snKey){
+        const seenSerial=snMap.get(r._snKey);
+        if(seenSerial){
+          if(seenSerial.sig===rowSig){
+            warnings.push({row:ln,field:"SerialNumber",msg:`Duplicate export row ignored for serial: ${r.sn}`});
+            duplicateSerials.push(r.sn);
+            rejectForDuplicate=true;
+          }
+          else{
+            warnings.push({row:ln,field:"SerialNumber",msg:`Duplicate serial rejected from staging: ${r.sn}`});
+            duplicateSerials.push(r.sn);
+            rejectForDuplicate=true;
+          }
+        }else{snMap.set(r._snKey,{sig:rowSig,row:ln});}
+      }
+      if(rejectForDuplicate){
+        skippedRows.add(ln);
+        continue;
+      }
+      if(!r.sn||r.sn===r.id)warnings.push({row:ln,field:"SerialNumber",msg:"SerialNumber same as AssetsID or blank"});
+      if(!r.model||r.model==="\u2014")warnings.push({row:ln,field:"Model",msg:"Blank model"});
+      if(r.status==="assigned"&&(!r.user||r.user==="\u2014"))warnings.push({row:ln,field:"AssignedTo",msg:"Assigned but no user"});      
+      if(r.we==="\u2014"&&r.status!=="retired")warnings.push({row:ln,field:"WarrantyExpiryDate",msg:"Missing warranty date"});
+      if(r.ram==="\u2014")warnings.push({row:ln,field:"Ram",msg:"Blank or malformed RAM"});
+    }
+    onProgress?.(rows.length?end/rows.length:1);
+    await yieldToUi();
+  }
+  const dupIds=duplicateAssetIds.length;
+  const dupSerials=duplicateSerials.length;
+  const errorRows=new Set(errors.map(e=>e.row));
+  const validRows=rows.filter((_,i)=>!errorRows.has(i+2)&&!skippedRows.has(i+2));
+  return {errors,warnings,dupIds,dupSerials,blankStatuses,invalidDates,unknownStatuses,missingIds,validRows,errorRows,rejectedCount:rows.length-validRows.length,skippedDuplicates:skippedRows.size,duplicateAssetIds,duplicateSerials};
+};
+
+// â”€â”€â”€ AMS IMPORT MODULE (UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivity,setAssetActivity,prePromoteActivityRef}){
+  const [stage,setStage]=useState("upload");// upload|parsing|staging|promoted
+  const [staging,setStaging]=useState([]);
+  const [validation,setValidation]=useState(null);
+  const [parseProgress,setParseProgress]=useState(0);
+  const [fileName,setFileName]=useState("");
+  const [previewPage,setPreviewPage]=useState(0);
+  const [previewFilter,setPreviewFilter]=useState("all");
+  const PREVIEW_PAGE_SIZE=50;
+  const resetImportState=useCallback((nextStage="upload")=>{
+    setStage(nextStage);setStaging([]);setValidation(null);setParseProgress(0);setFileName("");setPreviewFilter("all");setPreviewPage(0);
+  },[]);
+  const blockedReasonSummary=useMemo(()=>{
+    if(!validation?.errors?.length)return [];
+    const rank={Status:"unknown status",AssetsID:"missing asset id",SerialNumber:"duplicate serial",WarrantyExpiryDate:"invalid date",AssignedDate:"invalid date"};
+    const counts={};
+    validation.errors.forEach(e=>{
+      const key=e.msg.startsWith("Duplicate ID")?"duplicate asset id":e.msg.startsWith("Duplicate serial")?"duplicate serial":e.msg==="Missing AssetsID"?"missing asset id":e.msg==="Blank status"?"blank status":e.msg==="Invalid date"?"invalid date":e.field==="Status"?"unknown status":rank[e.field]||e.field.toLowerCase();
+      counts[key]=(counts[key]||0)+1;
+    });
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  },[validation]);
+  const duplicateReasonSummary=useMemo(()=>{
+    const countTop=(list=[])=>Object.entries(list.reduce((acc,item)=>{const key=String(item||"").trim();if(key)acc[key]=(acc[key]||0)+1;return acc;},{})).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    return {
+      ids:countTop(validation?.duplicateAssetIds),
+      serials:countTop(validation?.duplicateSerials),
+    };
+  },[validation]);
+
+  const handleFile=(e)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    setFileName(file.name);setStage("parsing");setParseProgress(0);setStaging([]);setValidation(null);setPreviewFilter("all");setPreviewPage(0);
+    const reader=new FileReader();
+    reader.onerror=()=>{
+      setStage("upload");setStaging([]);setValidation(null);
+      setToast("File read failed. Check the file and try again.");
+    };
+    reader.onload=async(evt)=>{
+      try{
+        const text=evt.target?.result;
+        if(!text){setStage("upload");setToast("File appears empty.");return;}
+        setParseProgress(20);
+        const rows=parseCSV(text);
+        if(rows.length<2){setToast("CSV has no data rows.");setStage("upload");return;}
+        setParseProgress(40);
+        const rawHeaders=rows[0].map(h=>h.replace(/^\uFEFF/,"").trim());
+        const dataRows=rows.slice(1);
+        setParseProgress(60);
+        const normalized=await normalizeRowsChunked(rawHeaders,dataRows,(p)=>setParseProgress(60+Math.round(p*20)));
+        const v=await validateImportChunked(normalized,(p)=>setParseProgress(80+Math.round(p*18)));
+        setParseProgress(100);
+        const valid=v.validRows||normalized.filter((_,i)=>!v.errorRows.has(i+2));
+        setStaging(valid);
+        setValidation({...v,total:dataRows.length,valid:valid.length,rejected:v.rejectedCount});
+        setStage("staging");setPreviewPage(0);
+      }catch(err){
+        console.error("Import failed:",err);
+        setStage("upload");setStaging([]);setValidation(null);
+        setToast(`Import failed: ${err.message||"Unknown error"}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Promotion gate logic: do NOT allow promotion if any row has hard validation errors.
+  const hasHardErrors=validation&&validation.errors&&validation.errors.length>0;
+  const promote=()=>{
+    if(!staging.length)return;
+    if(hasHardErrors){setToast("Cannot promote: fix hard validation errors first.");return;}
+    // Snapshot current live data before overwriting
+    if(prePromoteRef)prePromoteRef.current=assets;
+    if(prePromoteActivityRef)prePromoteActivityRef.current=assetActivity;
+    setAssets(staging);
+    if(setAssetActivity)setAssetActivity(buildImportedAssetActivity(staging,fileName));
+    setStage("promoted");
+    setToast(`Registry replaced: ${staging.length.toLocaleString()} assets now live`);
+  };
+
+  // Undo: restore the dataset that existed before the last promote
+  const undoLastImport=()=>{
+    if(!prePromoteRef?.current){setToast("No previous dataset to restore.");return;}
+    const prev=prePromoteRef.current;
+    setAssets(prev);
+    prePromoteRef.current=null;
+    if(prePromoteActivityRef){
+      if(prePromoteActivityRef.current)setAssetActivity(prePromoteActivityRef.current);
+      prePromoteActivityRef.current=null;
+    }
+    resetImportState("upload");
+    setToast(`Undo: restored ${prev.length.toLocaleString()} assets from previous state`);
+  };
+  // Hard reset: demo/seed data
+  const resetToDemo=()=>{
+    if(prePromoteRef)prePromoteRef.current=null;
+    if(prePromoteActivityRef)prePromoteActivityRef.current=null;
+    setAssets(SEED_REG_ASSETS);
+    if(setAssetActivity)setAssetActivity(buildInitialAssetActivity(SEED_REG_ASSETS));
+    resetImportState("upload");
+    setToast("Reset to demo dataset");
+  };
+
+  // Staging preview with pagination
+  const previewData=useMemo(()=>{
+    let list=staging;
+    if(previewFilter!=="all")list=list.filter(a=>a.status===previewFilter);
+    return list;
+  },[staging,previewFilter]);
+  const totalPages=Math.max(1,Math.ceil(previewData.length/PREVIEW_PAGE_SIZE));
+  const pageData=previewData.slice(previewPage*PREVIEW_PAGE_SIZE,(previewPage+1)*PREVIEW_PAGE_SIZE);
+  const stCounts=useMemo(()=>{const c={};staging.forEach(a=>{c[a.status]=(c[a.status]||0)+1;});return c;},[staging]);
+  useEffect(()=>{setPreviewPage(p=>Math.min(p,totalPages-1));},[totalPages]);
+
+  return (<>
+    {/* â”€â”€ UPLOAD STAGE â”€â”€ */}
+    {stage==="upload"&&(<div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
+      <div style={{width:56,height:56,borderRadius:14,background:C.accentSoft,border:`1px solid ${C.accentBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.accent}}>{"\u2B06"}</div>
+      <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>AMS Registry Import</h2>
+      <p style={{fontSize:13,color:C.sub,margin:"0 0 20px"}}>Upload your AMS asset export CSV to replace the sample registry with live data.</p>
+      <label style={{display:"inline-block",padding:"10px 24px",borderRadius:8,background:C.accent,color:"#FFF",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+        Choose CSV File
+        <input type="file" accept=".csv" onChange={handleFile} style={{display:"none"}}/>
+      </label>
+      <div style={{marginTop:16,fontSize:11,color:C.muted}}>Expected columns: AssetsID, AssetsName, AssetsType, Category, Status, AssetsLocation, AssignedTo, AssignedDate, AssetModelNumber, SerialNumber, WarrantyExpiryDate, Notes, ShippingAddress, LeaseNumber, Ram</div>
+      {assets!==SEED_REG_ASSETS&&<div style={{marginTop:20,padding:"10px 16px",background:C.greenSoft,border:`1px solid ${C.greenBorder}`,borderRadius:8}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.green}}>Imported registry active: {assets.length.toLocaleString()} assets</div>
+        <div style={{display:"flex",gap:6,marginTop:8}}>
+          {prePromoteRef?.current&&prePromoteRef.current!==assets&&<button onClick={undoLastImport} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:11,fontWeight:600,cursor:"pointer"}}>Undo Last Import ({prePromoteRef.current.length.toLocaleString()} assets)</button>}
+          <button onClick={resetToDemo} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:11,fontWeight:600,cursor:"pointer"}}>Reset to Demo Data</button>
+        </div>
+      </div>}
+    </div>)}
+
+    {/* â”€â”€ PARSING STAGE â”€â”€ */}
+    {stage==="parsing"&&(<div style={{maxWidth:500,margin:"60px auto",textAlign:"center"}}>
+      <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Parsing {fileName}...</div>
+      <div style={{width:"100%",height:6,background:C.panel,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${parseProgress}%`,background:C.accent,borderRadius:3,transition:"width 0.3s"}}/></div>
+      <div style={{fontSize:11,color:C.muted,marginTop:8}}>{parseProgress}%</div>
+    </div>)}
+
+    {/* â”€â”€ STAGING STAGE â”€â”€ */}
+    {stage==="staging"&&validation&&(<>
+      <SH color={C.accent} badge="Import Staging">AMS Import Summary</SH>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Kpi label="Total Rows" value={validation.total.toLocaleString()} color={C.accent}/>
+        <Kpi label="Valid" value={validation.valid.toLocaleString()} color={C.green}/>
+        <Kpi label="Rejected" value={(validation.rejected??0).toLocaleString()} color={(validation.rejected??0)>0?C.red:C.green}/>
+        <Kpi label="Errors" value={validation.errors.length} color={validation.errors.length>0?C.red:C.green} alert={validation.errors.length>0}/>
+        <Kpi label="Warnings" value={validation.warnings.length} color={validation.warnings.length>0?C.amber:C.green}/>
+        {(validation.skippedDuplicates??0)>0&&<Kpi label="Skipped Duplicates" value={validation.skippedDuplicates} color={C.amber}/>}
+        {(validation.missingIds??0)>0&&<Kpi label="Missing IDs" value={validation.missingIds} color={C.red}/>}
+        <Kpi label="Dup Asset IDs" value={validation.dupIds??0} color={(validation.dupIds??0)>0?C.amber:C.green}/>
+        <Kpi label="Dup Serials" value={validation.dupSerials??0} color={(validation.dupSerials??0)>0?C.amber:C.green}/>
+        {(validation.blankStatuses??0)>0&&<Kpi label="Blank Status" value={validation.blankStatuses} color={C.red}/>}
+        {(validation.invalidDates??0)>0&&<Kpi label="Invalid Dates" value={validation.invalidDates} color={C.red}/>}
+        {(validation.unknownStatuses??0)>0&&<Kpi label="Unknown Status" value={validation.unknownStatuses} color={C.red}/>}
+      </div>
+      {((validation.skippedDuplicates??0)>0||((validation.dupIds??0)>0)||((validation.dupSerials??0)>0))&&<div style={{background:C.amberSoft,border:`1px solid ${C.amberBorder}`,borderRadius:8,padding:"10px 12px",marginBottom:14}}>
+        <div style={{fontSize:11.5,fontWeight:700,color:C.amber}}>Duplicate rows excluded from staging: {validation.skippedDuplicates??0}</div>
+        {duplicateReasonSummary.ids.length>0&&<div style={{fontSize:10.5,color:C.sub,marginTop:4}}>Top duplicate asset ids: {duplicateReasonSummary.ids.map(([id,count])=>`${id} (${count})`).join(", ")}</div>}
+        {duplicateReasonSummary.serials.length>0&&<div style={{fontSize:10.5,color:C.sub,marginTop:4}}>Top duplicate serials: {duplicateReasonSummary.serials.map(([sn,count])=>`${sn} (${count})`).join(", ")}</div>}
+      </div>}
+
+      {/* Status distribution */}
+      <SH color={C.cyan}>Status Distribution (Staged)</SH>
+      <div style={{display:"flex",gap:4,marginBottom:14,flexWrap:"wrap"}}>
+        <button onClick={()=>{setPreviewFilter("all");setPreviewPage(0);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${previewFilter==="all"?C.accent:C.border}`,background:previewFilter==="all"?C.accentSoft:C.surface,color:previewFilter==="all"?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>All ({staging.length.toLocaleString()})</button>
+        {Object.entries(REG_ST).map(([k,s])=>{const n=stCounts[k]||0;return n>0?(<button key={k} onClick={()=>{setPreviewFilter(k);setPreviewPage(0);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${previewFilter===k?C.accent:C.border}`,background:previewFilter===k?C.accentSoft:C.surface,color:previewFilter===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{s.l} ({n.toLocaleString()})</button>):null;})}
+      </div>
+
+      {/* Validation issues */}
+      {(validation.errors.length>0||validation.warnings.length>0)&&(<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginBottom:14,maxHeight:200,overflowY:"auto"}}>
+        <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>VALIDATION ISSUES ({validation.errors.length} errors, {validation.warnings.length} warnings)</div>
+        {validation.errors.slice(0,20).map((e,i)=>(<div key={"e"+i} style={{fontSize:11,color:C.red,padding:"2px 0"}}>Row {e.row}: [{e.field}] {e.msg}</div>))}
+        {validation.warnings.slice(0,20).map((w,i)=>(<div key={"w"+i} style={{fontSize:11,color:C.amber,padding:"2px 0"}}>Row {w.row}: [{w.field}] {w.msg}</div>))}
+        {(validation.errors.length+validation.warnings.length)>40&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>Showing first 40 of {validation.errors.length+validation.warnings.length} issues</div>}
+      </div>)}
+
+      {/* Preview table (paginated) */}
+      <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 520px)"}}>
+        <table style={{width:"100%",minWidth:900}}>
+          <thead><tr>{["Asset ID","Model","Category","Status","Location","User","Warranty","RAM","Lease #"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{pageData.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No staged rows match the current status filter.</td></tr>}
+            {pageData.map((a,i)=>(<tr key={a.id+i}>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel}}><span style={{fontFamily:MN,fontSize:10,color:C.accent,fontWeight:600}}>{a.id}</span></td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11}}>{a.model}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11,color:C.sub}}>{a.cat}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel}}><RStChip s={a.status}/></td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.office}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11}}>{a.user||"—"}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10,color:C.sub}}>{a.we}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{a.ram}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:9.5,color:C.muted,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.leaseNum}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {/* Pagination */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+        <div style={{fontSize:11,color:C.muted}}>Page {previewPage+1} of {totalPages} ({previewData.length.toLocaleString()} rows)</div>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={()=>setPreviewPage(p=>Math.max(0,p-1))} disabled={previewPage===0} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:previewPage===0?C.muted:C.text,fontSize:11,cursor:previewPage===0?"default":"pointer"}}>{"\u2190"} Prev</button>
+          <button onClick={()=>setPreviewPage(p=>Math.min(totalPages-1,p+1))} disabled={previewPage>=totalPages-1} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:previewPage>=totalPages-1?C.muted:C.text,fontSize:11,cursor:previewPage>=totalPages-1?"default":"pointer"}}>Next {"\u2192"}</button>
+        </div>
+      </div>
+      {/* Actions: promotion gate — Promote disabled when there are hard validation errors */}
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={promote} disabled={hasHardErrors} style={{padding:"8px 24px",borderRadius:6,border:"none",background:hasHardErrors?C.muted:C.green,color:"#FFF",fontSize:13,fontWeight:600,cursor:hasHardErrors?"not-allowed":"pointer"}}>Promote to Live Registry ({staging.length.toLocaleString()} assets)</button>
+        <button onClick={()=>resetImportState("upload")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
+      </div>
+      {hasHardErrors&&<div style={{marginTop:10,padding:"10px 12px",borderRadius:8,background:C.redSoft,border:`1px solid ${C.redBorder}`,color:C.red}}>
+        <div style={{fontSize:11.5,fontWeight:700}}>Promotion blocked: {validation.errors.length} hard validation error{validation.errors.length===1?"":"s"}</div>
+        {blockedReasonSummary.length>0&&<div style={{fontSize:10.5,marginTop:4}}>Top reasons: {blockedReasonSummary.map(([label,count])=>`${label} (${count})`).join(", ")}</div>}
+      </div>}
+    </>)}
+
+    {/* â”€â”€ PROMOTED STAGE â”€â”€ */}
+    {stage==="promoted"&&(<div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
+      <div style={{width:56,height:56,borderRadius:14,background:C.greenSoft,border:`1px solid ${C.greenBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.green}}>{"\u2713"}</div>
+      <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>Import Complete</h2>
+      <p style={{fontSize:13,color:C.sub,margin:"0 0 6px"}}>{assets.length.toLocaleString()} assets promoted to live registry.</p>
+      <p style={{fontSize:11,color:C.muted,margin:"0 0 20px"}}>Asset Registry, KPIs, and filters now reflect AMS data.</p>
+      <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+        <button onClick={()=>go("registry")} style={{padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Open Asset Registry</button>
+        <button onClick={()=>resetImportState("upload")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:12,fontWeight:500,cursor:"pointer"}}>Import Another File</button>
+        {prePromoteRef?.current&&prePromoteRef.current!==assets&&<button onClick={undoLastImport} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:12,fontWeight:500,cursor:"pointer"}}>Undo Import</button>}
+        <button onClick={resetToDemo} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:12,fontWeight:500,cursor:"pointer"}}>Reset to Demo Data</button>
+      </div>
+    </div>)}
+  </>);
+}
+
+
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ MAIN Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+export default function ITAMPlatform(){
+  const currentRole="Admin";
+  const [nav,setNav]=useState("refresh.command");
+  const [hover,setHover]=useState(null);
+  const [toast,setToast]=useState(null);
+  const [anim,setAnim]=useState(false);
+  const [auditEvents,setAuditEvents]=useState(AUDIT_EVENTS);
+  const [theme,setTheme]=useState("dark");
+  const [assets,setAssets]=useState(SEED_REG_ASSETS);
+  const [assetActivity,setAssetActivity]=useState(()=>buildInitialAssetActivity(SEED_REG_ASSETS));
+  // Snapshot of assets before last full-replace import. Lives here (not in AmsImportModule) so it survives nav changes.
+  const prePromoteRef=useRef(null);
+  const prePromoteActivityRef=useRef(null);
+  const [cases,setCases]=useState(SEED_CASES);
+  const [casePrefill,setCasePrefill]=useState(null);
+  const [caseSelection,setCaseSelection]=useState(null);
+  const [selectedAssetTag,setSelectedAssetTag]=useState(null);
+  const visibleNav=useMemo(()=>getVisibleNavTreeForRole(currentRole),[currentRole]);
+  const defaultNavId=useMemo(()=>getDefaultNavIdForRole(currentRole),[currentRole]);
+
+  useEffect(()=>{setAnim(false);const t=setTimeout(()=>setAnim(true),40);return ()=>clearTimeout(t);},[nav]);
+  useEffect(()=>{const safeNav=resolveRoleSafeNav(currentRole,nav);if(nav!==safeNav)setNav(safeNav);},[currentRole,defaultNavId,nav]);
+
+  const goSafe=useCallback((targetNavId)=>{
+    const safeNavId=resolveRoleSafeNav(currentRole,targetNavId||defaultNavId);
+    setNav(safeNavId);
+    if(!safeNavId.startsWith("cases")){setCasePrefill(null);setCaseSelection(null);}
+    if(safeNavId!=="registry")setSelectedAssetTag(null);
+  },[currentRole,defaultNavId]);
+  const goHome=useCallback(()=>goSafe(defaultNavId),[goSafe,defaultNavId]);
+  // Legacy helper names retained because other modules already use them.
+  // They now act as general deep-link helpers for case-id and asset-tag navigation.
+  const openCaseFromAsset=useCallback((caseId)=>{setCasePrefill(null);setCaseSelection(caseId);goSafe("cases.all");},[goSafe]);
+  const openAssetFromCase=useCallback((assetTag)=>{setSelectedAssetTag(assetTag);goSafe("registry");setToast(`Opening ${assetTag}`);},[goSafe]);
+  const clearCaseSelection=useCallback(()=>setCaseSelection(null),[]);
+  const clearCasePrefill=useCallback(()=>setCasePrefill(null),[]);
+  const clearAssetSelection=useCallback(()=>setSelectedAssetTag(null),[]);
+  const appendAssetActivity=useCallback((entries)=>{
+    const list=(Array.isArray(entries)?entries:[entries]).filter(Boolean).map(entry=>entry.id?entry:createAssetActivityEntry(entry));
+    if(list.length===0)return;
+    setAssetActivity(prev=>[...list,...prev]);
+  },[]);
+  const updateAssetByTag=useCallback((tag,updater,entries=[])=>{
+    const nextEntries=(Array.isArray(entries)?entries:[entries]).filter(Boolean).map(entry=>entry.id?entry:createAssetActivityEntry({...entry,asset:entry.asset||tag}));
+    setAssets(prev=>prev.map(asset=>{
+      if(asset.tag!==tag)return asset;
+      const updated=typeof updater==="function"?updater(asset):{...asset,...updater};
+      const histEntries=nextEntries.map(entry=>({d:entry.ts.slice(0,10),e:entry.label,b:entry.by||"Current User"}));
+      return {...updated,hist:[...histEntries,...(updated.hist||asset.hist||[])]};
+    }));
+    if(nextEntries.length)appendAssetActivity(nextEntries);
+  },[appendAssetActivity]);
+  const onCaseTransition=useCallback(({caseData,to})=>{
+    const primaryAsset=caseData.assetId;
+    const replacementAsset=caseData.replacementId;
+    const transitionEvents=[];
+    setAssets(prev=>prev.map(a=>{
+      if(a.tag!==primaryAsset&&a.tag!==replacementAsset)return a;
+      const next={...a};
+      const prevStatus=a.status;
+      if(a.tag===primaryAsset){
+        if(caseData.type==="refresh"){
+          if(["appointment_booked","label_created","device_issued","provisioning"].includes(to))next.status="refresh_scheduled";
+          if(["shipped","appointment_complete","awaiting_return"].includes(to))next.status="pending_return";
+          if(["returned","completed","closed"].includes(to))next.status="inventory";
+        }
+        if(caseData.type==="break_fix"){
+          if(["vendor_review","repair_approved","repair_in_progress"].includes(to))next.status="repair";
+          if(["device_returned","closed","replacement_issued"].includes(to)&&next.status==="repair")next.status="inventory";
+        }
+        if(caseData.type==="offboarding"){
+          if(["label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","secondary_followup_1","secondary_followup_2","escalated"].includes(to))next.status="pending_return";
+          if(["resolved","closed"].includes(to))next.status="inventory";
+        }
+        if(caseData.type==="return_case"){
+          if(["label_sent","in_transit"].includes(to))next.status="in_transit";
+          if(["received","inspecting","staged_for_lfs"].includes(to))next.status="inventory";
+          if(to==="closed"&&next.status==="in_transit")next.status="inventory";
+        }
+      }
+      if(a.tag===replacementAsset&&caseData.type==="refresh"){
+        if(["device_issued","provisioning","shipped"].includes(to))next.status="reserved";
+        if(["appointment_complete","returned","completed","closed"].includes(to)&&next.status==="reserved")next.status="assigned";
+      }
+      if(next.status!==prevStatus)transitionEvents.push(createAssetActivityEntry({asset:a.tag,label:"Status changed",detail:`${prevStatus} \u2192 ${next.status} via ${caseData.id}`,by:"Case Management"}));
+      return transitionEvents.length&&transitionEvents[transitionEvents.length-1]?.asset===a.tag?{...next,hist:[{d:transitionEvents[transitionEvents.length-1].ts.slice(0,10),e:"Status changed",b:"Case Management"},...(next.hist||a.hist||[])]}:next;
+    }));
+    if(transitionEvents.length)appendAssetActivity(transitionEvents);
+  },[appendAssetActivity]);
+  const onAutomationEvent=useCallback(({ts,rule,entry})=>{
+    setAuditEvents(prev=>{
+      const maxId=prev.reduce((m,e)=>Math.max(m,Number((e.id||"").replace("AE-",""))||0),0);
+      const nextId=`AE-${String(maxId+1).padStart(4,"0")}`;
+      const type=AUTO_AUDIT_TYPE[rule.cat]||"status_change";
+      const detail=`Automation ${entry.rule} (${rule.name}): ${entry.detail}`;
+      const event={id:nextId,ts,asset:entry.asset||null,user:entry.user||"Automation Engine",type,src:rule.src||"itam",by:"Lifecycle Automation Engine",detail};
+      return [event,...prev];
+    });
+  },[]);
+  const currentNavItem=navLookupAll[nav];
+  const currentParentNav=currentNavItem?.parentId?navLookupAll[currentNavItem.parentId]:null;
+  const topNav=currentParentNav?.id||currentNavItem?.id||nav;
+  const crumb=currentNavItem?.label||"";
+  const pageTitle=currentParentNav?`${navTitlePrefix(currentParentNav.id,currentParentNav.label)} \u2014 ${currentNavItem?.label}`:currentNavItem?.label||"ITAM Platform";
+
+  return (
+    <div data-theme={theme} style={{minHeight:"100vh",background:C.bg,fontFamily:SN,color:C.text,display:"flex",position:"relative"}}>
+      <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+      <style>{`:root{--bg:#060d1f;--surface-1:#121c36;--surface-2:#182547;--text-primary:#eaf1ff;--text-secondary:#a8b7d2;--muted:#7f92b8;--border:rgba(129,156,214,0.18);--border-subtle:rgba(129,156,214,0.12);--shadow-1:0 8px 20px rgba(2,8,20,0.34);--shadow-2:0 14px 36px rgba(2,8,20,0.50);--card-shadow:0 14px 30px rgba(2,8,20,0.44);--card-highlight:rgba(181,203,255,0.08);--chart-grid:rgba(140,166,220,0.16);--chart-axis:#9cb0d7;--card-radius:14px;--card-padding:14px 16px;--accent:#4f8cff;--success:#1dd4a3;--warning:#f4b740;--error:#ff5d6c;}[data-theme="dark"]{--bg:#060d1f;--surface-1:#121c36;--surface-2:#182547;--text-primary:#eaf1ff;--text-secondary:#a8b7d2;--muted:#7f92b8;--border:rgba(129,156,214,0.18);--border-subtle:rgba(129,156,214,0.12);--shadow-1:0 8px 20px rgba(2,8,20,0.34);--shadow-2:0 14px 36px rgba(2,8,20,0.50);--card-shadow:0 14px 30px rgba(2,8,20,0.44);--card-highlight:rgba(181,203,255,0.08);--chart-grid:rgba(140,166,220,0.16);--chart-axis:#9cb0d7;--card-radius:14px;--card-padding:14px 16px;--accent:#4f8cff;--success:#1dd4a3;--warning:#f4b740;--error:#ff5d6c;}[data-theme="light"]{--bg:#f6f8fd;--surface-1:#ffffff;--surface-2:#f3f6fc;--text-primary:#111827;--text-secondary:#4b5563;--muted:#6b7280;--border:rgba(148,163,184,0.24);--border-subtle:rgba(148,163,184,0.18);--shadow-1:0 1px 2px rgba(0,0,0,0.04);--shadow-2:0 4px 16px rgba(0,0,0,0.08);--card-shadow:0 6px 18px rgba(15,23,42,0.10);--card-highlight:rgba(255,255,255,0.85);--chart-grid:rgba(148,163,184,0.2);--chart-axis:#64748b;--card-radius:14px;--card-padding:14px 16px;--accent:#2563eb;--success:#059669;--warning:#d97706;--error:#dc2626;}*{box-sizing:border-box}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${C.borderHeavy};border-radius:3px}table{border-spacing:0}tbody tr:hover td{background:${C.hover} !important}select{appearance:auto}`}</style>
+
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â SIDEBAR Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+      <nav style={{width:220,flexShrink:0,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh",overflowY:"auto",zIndex:10}}>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:26,height:26,borderRadius:5,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#FFF",fontSize:11,fontWeight:700,fontFamily:MN}}>IT</div><div><div style={{fontSize:12.5,fontWeight:700,letterSpacing:"-0.02em"}}>ITAM Platform</div><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>Asset Management</div></div></div></div>
+        <div style={{padding:"8px 8px",flex:1}}>
+          {(()=>{
+            // Group visible top-level items by their group field, preserving order
+            const groups=[];
+            const seen=new Map();
+            visibleNav.forEach(item=>{
+              if(!seen.has(item.group)){seen.set(item.group,groups.length);groups.push({label:item.group,items:[]});}
+              groups[seen.get(item.group)].items.push(item);
+            });
+            return groups.map((grp,gi)=>(
+              <div key={grp.label}>
+                {gi>0&&<div style={{margin:"6px 8px 4px",fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",textTransform:"uppercase",paddingTop:6,borderTop:`1px solid ${C.borderLight}`}}>{grp.label}</div>}
+                {gi===0&&<div style={{margin:"4px 8px 4px",fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.1em",textTransform:"uppercase"}}>{grp.label}</div>}
+                {grp.items.map(item=>{const isT=topNav===item.id;const isE=item.children&&(isT||nav.startsWith(item.id));return (<div key={item.id}>
+                  <div onClick={e=>{e.stopPropagation();goSafe(item.children?item.children[0].id:item.id);}} onMouseEnter={()=>setHover(item.id)} onMouseLeave={()=>setHover(null)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:6,marginBottom:2,cursor:"pointer",userSelect:"none",background:isT?C.active:hover===item.id?C.hover:"transparent",borderLeft:item.core?`3px solid ${C.accent}`:isT?`3px solid ${C.text}`:"3px solid transparent"}}>
+                    <span style={{fontSize:13,width:20,textAlign:"center",color:item.core?C.accent:isT?C.text:C.muted}}>{item.icon}</span>
+                    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:isT||item.core?600:400,color:item.core?C.accent:isT?C.text:C.sub}}>{item.label}</div>{item.core&&<div style={{fontSize:9,color:C.accent,fontFamily:MN,marginTop:1}}>System of Record</div>}</div>
+                  </div>
+                  {item.children&&isE&&<div style={{paddingLeft:24,marginBottom:4}}>{item.children.map(ch=>(<div key={ch.id} onClick={e=>{e.stopPropagation();goSafe(ch.id);}} style={{padding:"5px 10px",borderRadius:4,marginBottom:1,cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:nav===ch.id?600:400,color:nav===ch.id?C.text:C.muted,background:nav===ch.id?C.accentSoft:"transparent",borderLeft:nav===ch.id?`2px solid ${C.accent}`:"2px solid transparent"}}>{ch.label}</div>))}</div>}
+                </div>);})}
+              </div>
+            ));
+          })()}        </div>
+        <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.chartAxis,fontFamily:MN}}><div>AMS sync: 3 min ago</div><div>Inventory: Mar 6, 2026</div></div>
+      </nav>
+
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â MAIN Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,height:"100vh",overflow:"hidden"}}>
+        <header style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:C.shadow,flexShrink:0}}>
+          <div><div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span onClick={()=>goSafe("refresh.command")} style={{fontSize:10.5,color:C.accent,fontWeight:500,cursor:"pointer"}}>ITAM Platform</span><span style={{fontSize:10,color:C.light}}>/</span><span style={{fontSize:10.5,color:C.text,fontWeight:600}}>{crumb}</span></div><div style={{fontSize:14,fontWeight:700,letterSpacing:"-0.02em"}}>{pageTitle}</div></div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>{theme==="dark"?"Light Mode":"Dark Mode"}</button>
+            <button onClick={()=>setToast("Exporting\u2026")} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>Export</button>
+            {nav.startsWith("refresh")&&<button onClick={()=>setToast("New case dialog\u2026")} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ New Case</button>}
+            {nav==="onboarding"&&<button onClick={()=>setToast("New onboarding dialog\u2026")} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.green,color:"#FFF",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ New Onboarding</button>}
+            {nav.startsWith("cases")&&<button onClick={()=>{setCasePrefill(null);setCaseSelection(null);goSafe("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Create Case</button>}
+            {nav==="breakfix"&&<button onClick={()=>setToast("New break-fix ticket\u2026")} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.orange,color:"#FFF",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ New Ticket</button>}
+          </div>
+        </header>
+
+        <main style={{flex:1,padding:"14px 20px",overflowY:"auto",opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(5px)",transition:"all 0.2s"}}>
+          {nav==="executive"&&<ExecutiveCommandCenter go={goSafe} setToast={setToast} assets={assets}/>}
+          {nav==="home.queue"&&<Placeholder id="home.queue" goHome={goHome}/>}
+          {(nav==="ops"||nav==="ops.dashboard")&&<OperationsWorkloadPlanner go={goSafe} setToast={setToast} auditEvents={auditEvents} assets={assets}/>}
+          {nav==="ops.workload"&&<TeamWorkloadView go={goSafe} cases={cases} auditEvents={auditEvents}/>}
+          {nav==="alerts"&&<OperationsAlertsExceptionCenter go={goSafe} setToast={setToast} auditEvents={auditEvents} assets={assets}/>}
+          {(nav==="inventory.stock"||nav==="inventory.bookings")&&<InventoryModule setToast={setToast} currentNav={nav}/>}
+          {nav==="onboarding"&&<OnboardingModule setToast={setToast} go={goSafe} auditEvents={auditEvents} setAuditEvents={setAuditEvents}/>}
+          {nav==="offboarding"&&<OffboardingModule setToast={setToast} go={goSafe}/>}
+          {nav==="returns"&&<ReturnQueueModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
+          {nav==="returns.lease"&&<Placeholder id="returns.lease" goHome={goHome}/>}
+          {nav==="breakfix"&&<BreakFixModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
+          {nav==="refresh.command"&&<CommandView go={goSafe}/>}
+          {nav==="refresh.queue"&&<QueueView go={goSafe} cases={cases} onOpenCase={openCaseFromAsset} onOpenAsset={openAssetFromCase}/>}
+          {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=CASES.filter(c=>c.tech===t.name&&!["closed","checked_in"].includes(c.status));return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
+          {nav==="refresh.waves"&&<WavePlannerModule setToast={setToast} go={goSafe}/>}
+{(nav==="cases"||nav==="cases.all"||nav==="cases.create")&&<CaseManagementModule setToast={setToast} go={goSafe} cases={cases} setCases={setCases} prefill={casePrefill} selectedCaseId={caseSelection} onConsumeSelection={clearCaseSelection} onConsumePrefill={clearCasePrefill} onCaseTransition={onCaseTransition} currentNav={nav} onOpenAsset={openAssetFromCase} assets={assets} onUpdateAsset={updateAssetByTag}/>}
+          {nav==="registry"&&<AssetRegistryModule setToast={setToast} assets={assets} cases={cases} setCasePrefill={setCasePrefill} onOpenCase={openCaseFromAsset} go={goSafe} selectedAssetTag={selectedAssetTag} onClearAssetSelection={clearAssetSelection} onUpdateAsset={updateAssetByTag} assetActivity={assetActivity}/>}
+          {nav==="procurement"&&<ProcurementModule setToast={setToast} go={goSafe}/>}
+          {nav==="audit"&&<AuditModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase} auditEvents={auditEvents}/>}
+          {(nav==="admin"||nav==="admin.config")&&<AdminModule setToast={setToast}/>}
+          {nav==="admin.import"&&<AmsImportModule setToast={setToast} assets={assets} setAssets={setAssets} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef}/>}
+          {nav==="automation"&&<LifecycleAutomationModule setToast={setToast} go={goSafe} onAutomationEvent={onAutomationEvent} onOpenAsset={openAssetFromCase}/>}
+        </main>
+      </div>
+      {toast&&<Toast msg={toast} onClose={()=>setToast(null)}/>}
+    </div>
+  );
+}
