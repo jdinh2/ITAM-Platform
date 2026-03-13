@@ -4830,6 +4830,7 @@ const OFFBOARDING_IMPORT_STATUS_MAP_RAW={
   "Awaiting Movement":{caseStatus:"awaiting_movement"},
   "Follow-Up 1":{caseStatus:"followup_1_sent"},
   "Follow-Up 2":{caseStatus:"followup_2_sent"},
+  "Special Needs":{caseStatus:"needs_review"},
   "Needs Review":{caseStatus:"needs_review"},
   "Investigating":{caseStatus:"investigating"},
   "Escalated":{caseStatus:"escalated"},
@@ -4992,7 +4993,12 @@ const validateOperationalImportChunked=async(workflow,rows,existingCases,lineOff
         const endMs=new Date(`${row.parsedEndAt.replace(" ","T")}:00`).getTime();
         if(Number.isFinite(startMs)&&Number.isFinite(endMs)&&endMs<startMs){errors.push({row:line,field:"End Date/Time",msg:"End date/time is before start date/time"});invalidDates++;}
       }
-      if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()&&!String(row.assetId||"").trim()){errors.push({row:line,field:"Serial Number",msg:"Missing serials"});missingSerials++;}
+      if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()&&!String(row.assetId||"").trim()){
+        const serialIssue={row:line,field:"Serial Number",msg:"Missing serials"};
+        if(workflow==="offboarding")warnings.push(serialIssue);
+        else errors.push(serialIssue);
+        missingSerials++;
+      }
       const signature=operationalDuplicateSignature(row);
       if(signature.replace(/\|/g,"")!==""){
         if(seen.has(signature)){
@@ -5019,16 +5025,59 @@ const validateOperationalImportChunked=async(workflow,rows,existingCases,lineOff
   const validRows=rows.filter((_,i)=>!errorRows.has(i+lineOffset)&&!skippedRows.has(i+lineOffset));
   return {errors,warnings,validRows,errorRows,rejectedCount:rows.length-validRows.length,skippedDuplicates:skippedRows.size,missingEmployee,missingStatus,invalidDates,missingSerials,unknownStatuses,alreadyImported,linkedAssets:validRows.filter(row=>row.assetLinked).length,linkedReplacements:validRows.filter(row=>row.replacementLinked).length};
 };
-const toPromotedOperationalCase=(row)=>({
-  ...row,
-  id:nextCaseId(),
-  type:row.type,
-  notes:row.notes||"",
-  events:[...(row.events||[])],
-  outboundShipment:{...(row.outboundShipment||NULL_SHIPMENT)},
-  returnShipment:{...(row.returnShipment||NULL_SHIPMENT)},
-  importSource:{...(row.importSource||{})},
-});
+const toPromotedOperationalCase=(row)=>{
+  const importSource=row.importSource||{};
+  return {
+    id:nextCaseId(),
+    type:row.type,
+    status:row.status,
+    priority:row.priority,
+    created:row.created,
+    due:row.due,
+    tech:row.tech||"",
+    requestor:row.requestor||"",
+    userId:row.userId||"",
+    assetId:row.assetId||"",
+    replacementId:row.replacementId||"",
+    locationId:row.locationId||"",
+    notes:row.notes||"",
+    shipmentId:row.shipmentId||"",
+    shipmentCarrier:row.shipmentCarrier||"",
+    shipmentStatus:row.shipmentStatus||"not_ready",
+    appointmentDate:row.appointmentDate||"",
+    appointmentStatus:row.appointmentStatus||"",
+    returnExpected:Boolean(row.returnExpected),
+    returnFollowUpStatus:row.returnFollowUpStatus||"",
+    returnReceivedDate:row.returnReceivedDate||"",
+    intakeCondition:row.intakeCondition||"good",
+    intakeNotes:row.intakeNotes||"",
+    intakeDisposition:row.intakeDisposition||"inventory",
+    ticketId:row.ticketId||"",
+    procurementId:row.procurementId||"",
+    appointmentTitle:row.appointmentTitle||"",
+    outboundShipment:{...(row.outboundShipment||NULL_SHIPMENT)},
+    returnShipment:{...(row.returnShipment||NULL_SHIPMENT)},
+    events:[...(row.events||[])],
+    importSource:{
+      type:importSource.type||"",
+      sourceId:importSource.sourceId||"",
+      rawStatus:importSource.rawStatus||"",
+      oldSerial:importSource.oldSerial||"",
+      newSerial:importSource.newSerial||"",
+      employeeEmail:importSource.employeeEmail||"",
+      employeePhone:importSource.employeePhone||"",
+      operatingCompany:importSource.operatingCompany||"",
+      location:importSource.location||"",
+      tracking:importSource.tracking||"",
+      shippingAddress:importSource.shippingAddress||"",
+      modifiedAt:importSource.modifiedAt||"",
+      createdAt:importSource.createdAt||"",
+      modifiedBy:importSource.modifiedBy||"",
+      createdBy:importSource.createdBy||"",
+      preProvision:importSource.preProvision||"",
+    },
+  };
+};
 const getOperationalImportStatusMeta=(workflow,status)=>CASE_STATUS[status]||((workflow==="onboarding"?OB_STAT:workflow==="offboarding"?OFF_STAT:null)?.[status])||null;
 const getOperationalImportLinkageLabel=(workflow,row)=>{
   if(workflow==="refresh"){
