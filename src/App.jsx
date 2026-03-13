@@ -4493,6 +4493,17 @@ const toPromotedAsset=(row)=>({
   shipAddr:row.shipAddr||"",
 });
 
+const REFRESH_IMPORT_STATUS_MAP_RAW={
+  "Pending Scheduling":{caseStatus:"appointment_pending",appointmentStatus:"not_scheduled"},
+  "Scheduled":{caseStatus:"appointment_booked",appointmentStatus:"scheduled"},
+  "Completed":{caseStatus:"appointment_complete",appointmentStatus:"completed"},
+  "Follow-Up":{caseStatus:"contacted",appointmentStatus:"not_scheduled"},
+  "Special Needs":{caseStatus:"needs_review",appointmentStatus:"not_scheduled"},
+  "Canceled":{caseStatus:"canceled",appointmentStatus:"not_scheduled"},
+};
+const REFRESH_IMPORT_STATUS_MAP={};
+Object.entries(REFRESH_IMPORT_STATUS_MAP_RAW).forEach(([k,v])=>{REFRESH_IMPORT_STATUS_MAP[normalizeLookupKey(k)]=v;});
+
 const getAliasedValue=(headerIndex,vals,aliasMap,col)=>{
   const candidates=aliasMap[col]||[col];
   for(const candidate of candidates){
