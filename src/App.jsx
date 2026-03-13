@@ -4457,9 +4457,41 @@ const validateImportChunked=async(rows,onProgress)=>{
   const dupIds=duplicateAssetIds.length;
   const dupSerials=duplicateSerials.length;
   const errorRows=new Set(errors.map(e=>e.row));
-  const validRows=rows.filter((_,i)=>!errorRows.has(i+2)&&!skippedRows.has(i+2));
+const validRows=rows.filter((_,i)=>!errorRows.has(i+2)&&!skippedRows.has(i+2));
   return {errors,warnings,dupIds,dupSerials,blankStatuses,invalidDates,unknownStatuses,missingIds,validRows,errorRows,rejectedCount:rows.length-validRows.length,skippedDuplicates:skippedRows.size,duplicateAssetIds,duplicateSerials};
 };
+
+const toPromotedAsset=(row)=>({
+  id:row.id||"",
+  tag:row.tag||row.id||"",
+  sn:row.sn||"",
+  model:row.model||"\u2014",
+  cat:row.cat||"Laptop",
+  assetsName:row.assetsName||"",
+  assetsType:row.assetsType||"",
+  status:row.status||"",
+  user:row.user||"\u2014",
+  dept:row.dept||"\u2014",
+  office:row.office||"\u2014",
+  locId:row.locId??null,
+  pd:row.pd||"\u2014",
+  we:row.we||"\u2014",
+  ws:row.ws||"",
+  le:row.le||row.we||"\u2014",
+  leaseNum:row.leaseNum||"\u2014",
+  ram:row.ram||"\u2014",
+  age:row.age||"\u2014",
+  cost:Number.isFinite(row.cost)?row.cost:0,
+  cc:row.cc||"\u2014",
+  vendor:row.vendor||"\u2014",
+  intune:row.intune||"\u2014",
+  seen:row.seen||"\u2014",
+  cond:row.cond||"\u2014",
+  rf:Boolean(row.rf),
+  po:row.po||"\u2014",
+  notes:row.notes||"",
+  shipAddr:row.shipAddr||"",
+});
 
 const REFRESH_IMPORT_HEADER_ALIASES={
   ID:["id"],
@@ -5160,13 +5192,14 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
   const promote=()=>{
     if(!staging.length)return;
     if(hasHardErrors){setToast("Cannot promote: fix hard validation errors first.");return;}
+    const promotedAssets=staging.map(toPromotedAsset);
     // Snapshot current live data before overwriting
     if(prePromoteRef)prePromoteRef.current=assets;
     if(prePromoteActivityRef)prePromoteActivityRef.current=assetActivity;
-    setAssets(staging);
-    if(setAssetActivity)setAssetActivity(buildImportedAssetActivity(staging,fileName));
+    setAssets(promotedAssets);
+    if(setAssetActivity)setAssetActivity(buildImportedAssetActivity(promotedAssets,fileName));
     setStage("promoted");
-    setToast(`Registry replaced: ${staging.length.toLocaleString()} assets now live`);
+    setToast(`Registry replaced: ${promotedAssets.length.toLocaleString()} assets now live`);
   };
 
   // Undo: restore the dataset that existed before the last promote
