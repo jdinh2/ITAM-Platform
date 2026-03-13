@@ -4520,6 +4520,7 @@ const REFRESH_IMPORT_STATUS_MAP_RAW={
   "Scheduled":{caseStatus:"appointment_booked",appointmentStatus:"scheduled"},
   "Completed":{caseStatus:"appointment_complete",appointmentStatus:"completed"},
   "Follow-Up":{caseStatus:"contacted",appointmentStatus:"not_scheduled"},
+  "Special Needs":{caseStatus:"needs_review",appointmentStatus:"not_scheduled"},
   "Canceled":{caseStatus:"canceled",appointmentStatus:"not_scheduled"},
 };
 const REFRESH_IMPORT_STATUS_MAP={};
@@ -4709,7 +4710,10 @@ const validateRefreshImportChunked=async(rows,existingCases,onProgress)=>{
         const endMs=new Date(`${row.endAt.replace(" ","T")}:00`).getTime();
         if(Number.isFinite(startMs)&&Number.isFinite(endMs)&&endMs<startMs){errors.push({row:line,field:"End Date/Time",msg:"End date/time is before start date/time"});invalidDates++;}
       }
-      if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()){errors.push({row:line,field:"Serial Number",msg:"Missing serials"});missingSerials++;}
+      if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()){
+        warnings.push({row:line,field:"Serial Number",msg:"Missing serials"});
+        missingSerials++;
+      }
       const signature=refreshDuplicateSignature(row);
       if(signature.replace(/\|/g,"")!==""){
         if(seen.has(signature)){
@@ -5027,7 +5031,7 @@ const validateOperationalImportChunked=async(workflow,rows,existingCases,lineOff
       }
       if(!String(row.rawOldSerial||"").trim()&&!String(row.rawNewSerial||"").trim()&&!String(row.assetId||"").trim()){
         const serialIssue={row:line,field:"Serial Number",msg:"Missing serials"};
-        if(workflow==="offboarding")warnings.push(serialIssue);
+        if(workflow==="offboarding"||workflow==="refresh")warnings.push(serialIssue);
         else errors.push(serialIssue);
         missingSerials++;
       }
