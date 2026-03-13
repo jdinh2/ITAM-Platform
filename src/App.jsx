@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
-// ─── Phase 1 + Phase 2 live imports ─────────────────────────────────────────
+// â”€â”€â”€ Phase 1 + Phase 2 live imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import {
   CLOSED_CASE_STATUSES,
   CASE_TRANSITIONS,
@@ -35,87 +35,85 @@ import {
 } from "./features/analytics/TeamPerformancePanels.jsx";
 
 // ============================================================================
-// ITAM PLATFORM — Inventory module with Booking Request workflow
+// ITAM PLATFORM â€” Inventory module with Booking Request workflow
 // Tabs: Stock Overview | Stock Table | Booking Requests
 // ============================================================================
 
 const C={bg:"var(--bg)",surface:"var(--surface-1)",surfaceAlt:"var(--surface-2)",hover:"var(--surface-2)",active:"var(--surface-2)",panel:"var(--surface-2)",border:"var(--border)",borderLight:"var(--border-subtle)",borderHeavy:"var(--border-subtle)",text:"var(--text-primary)",sub:"var(--text-secondary)",muted:"var(--muted)",light:"var(--muted)",accent:"var(--accent)",accentSoft:"rgba(79,140,255,0.14)",accentBorder:"rgba(79,140,255,0.45)",green:"var(--success)",greenSoft:"rgba(29,212,163,0.14)",greenBorder:"rgba(29,212,163,0.45)",amber:"var(--warning)",amberSoft:"rgba(244,183,64,0.14)",amberBorder:"rgba(244,183,64,0.45)",red:"var(--error)",redSoft:"rgba(255,93,108,0.14)",redBorder:"rgba(255,93,108,0.45)",purple:"#9d7dff",purpleSoft:"rgba(157,125,255,0.14)",purpleBorder:"rgba(157,125,255,0.45)",cyan:"#35c9ff",cyanSoft:"rgba(53,201,255,0.14)",cyanBorder:"rgba(53,201,255,0.45)",orange:"#ff9f43",orangeSoft:"rgba(255,159,67,0.14)",orangeBorder:"rgba(255,159,67,0.45)",gray:"#8ea2c9",graySoft:"rgba(142,162,201,0.16)",grayBorder:"rgba(142,162,201,0.35)",shadow:"var(--shadow-1)",shadowMd:"var(--card-shadow)",innerHighlight:"var(--card-highlight)",chartGrid:"var(--chart-grid)",chartAxis:"var(--chart-axis)"};
 const MN="'Geist Mono','SF Mono',monospace";
 const SN="'Geist',-apple-system,BlinkMacSystemFont,sans-serif";
-const NAV_ROLES=["Executive","Lead","Technician","Admin"];
-const ROLE_DEFAULT_NAV={Executive:"executive",Lead:"refresh.command",Technician:"refresh.queue",Admin:"refresh.command"};
+const NAV_ROLES=["Executive","Manager","Technician"];
+const ROLE_DEFAULT_NAV={Executive:"executive",Manager:"refresh.command",Technician:"refresh.queue"};
 const IS_DEV=(typeof window!=="undefined"&&/^(localhost|127\.0\.0\.1)$/i.test(window.location?.hostname||""));
 const { CASE_TYPES, CASE_STATUS, isAllowedTransition, transitionValidation } = createCaseDomain(C);
 
-// ─── NAV_CONFIG ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ NAV_CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Domain groups: Home | Assets | Refresh & Returns | Cases |
 //                Operations | Administration
 //
 // Route ID compatibility notes (all route IDs preserved):
-//   "executive"         — unchanged, Home group
-//   "home.queue"        — unchanged, Home group
-//   "assets"            — NEW top-level shell for Assets domain
-//   "registry"          — unchanged route id, now child of "assets" (was child of "cases")
-//   "inventory"         — unchanged route id, now child of "assets" (was top-level)
-//   "inventory.stock"   — unchanged route id, now grandchild via "inventory" under "assets"
-//   "inventory.bookings"— unchanged route id
-//   "procurement"       — unchanged route id, now child of "assets" directly
-//   "refresh.*"         — all unchanged
-//   "returns"           — unchanged, child of "refresh"
-//   "returns.lease"     — unchanged, child of "refresh"
-//   "cases"             — unchanged route id, label changed to "Cases", group changed to "Cases"
-//   "cases.all"         — unchanged
-//   "cases.create"      — unchanged
-//   "onboarding"        — unchanged, child of "cases"
-//   "offboarding"       — unchanged, child of "cases"
-//   "breakfix"          — unchanged, child of "cases"
-//   "ops.*"             — unchanged
-//   "alerts"            — unchanged, child of "ops"
-//   "audit"             — unchanged, child of "ops"
-//   "admin.*"           — unchanged
-//   "automation"        — unchanged, child of "admin"
-// ──────────────────────────────────────────────────────────────────────────────
+//   "executive"         â€” unchanged, Home group
+//   "assets"            â€” NEW top-level shell for Assets domain
+//   "registry"          â€” unchanged route id, now child of "assets" (was child of "cases")
+//   "inventory"         â€” unchanged route id, now child of "assets" (was top-level)
+//   "inventory.stock"   â€” unchanged route id, now grandchild via "inventory" under "assets"
+//   "inventory.bookings"â€” unchanged route id
+//   "procurement"       â€” unchanged route id, now child of "assets" directly
+//   "refresh.*"         â€” all unchanged
+//   "returns"           â€” unchanged, child of "refresh"
+//   "returns.lease"     â€” unchanged, child of "refresh"
+//   "cases"             â€” unchanged route id, label changed to "Cases", group changed to "Cases"
+//   "cases.all"         â€” unchanged
+//   "cases.create"      â€” unchanged
+//   "onboarding"        â€” unchanged, child of "cases"
+//   "offboarding"       â€” unchanged, child of "cases"
+//   "breakfix"          â€” unchanged, child of "cases"
+//   "ops.*"             â€” unchanged
+//   "alerts"            â€” unchanged, child of "ops"
+//   "audit"             â€” unchanged, child of "ops"
+//   "admin.*"           â€” unchanged
+//   "automation"        â€” unchanged, child of "admin"
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAV_CONFIG=[
-  // ── HOME ──────────────────────────────────────────────────────────────────
-  {id:"executive",         group:"Home",            label:"Executive Overview",     icon:"\u25A6",parentId:null,       rolesAllowed:["Executive","Lead","Admin"]},
-  {id:"home.queue",        group:"Home",            label:"My Queue",               icon:"\u25A4",parentId:null,       rolesAllowed:["Lead","Technician"]},
+  // â”€â”€ HOME â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"executive",         group:"Executive Overview",label:"Executive Overview",   icon:"\u25A6",parentId:null,       rolesAllowed:["Executive","Manager"]},
 
-  // ── ASSETS ────────────────────────────────────────────────────────────────
-  {id:"assets",            group:"Assets",          label:"Assets",                 icon:"\u229E",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"registry",          group:"Assets",          label:"Asset Registry",         icon:null,    parentId:"assets",   core:true, rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"inventory.stock",   group:"Assets",          label:"Inventory",              icon:null,    parentId:"assets",   rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"inventory.bookings",group:"Assets",          label:"Booking Requests",       icon:null,    parentId:"assets",   rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"procurement",       group:"Assets",          label:"Procurement",            icon:null,    parentId:"assets",   rolesAllowed:["Lead","Admin"]},
+  // â”€â”€ ASSETS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"assets",            group:"Assets",          label:"Assets",                 icon:"\u229E",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"registry",          group:"Assets",          label:"Asset Registry",         icon:null,    parentId:"assets",   core:true, rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"inventory.stock",   group:"Assets",          label:"Inventory",              icon:null,    parentId:"assets",   rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"inventory.bookings",group:"Assets",          label:"Booking Request",        icon:null,    parentId:"assets",   rolesAllowed:["Manager","Technician"]},
+  {id:"procurement",       group:"Assets",          label:"Procurement",            icon:null,    parentId:"assets",   rolesAllowed:["Executive","Manager"]},
 
-  // ── REFRESH & RETURNS ──────────────────────────────────────────────────────
-  {id:"refresh",           group:"Refresh & Returns",label:"Refresh & Returns",    icon:"\u21BB",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"refresh.command",   group:"Refresh & Returns",label:"Command Center",       icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"refresh.queue",     group:"Refresh & Returns",label:"Refresh Queue",        icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"refresh.techs",     group:"Refresh & Returns",label:"Appointments",         icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"refresh.waves",     group:"Refresh & Returns",label:"Wave Planner",         icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Lead","Admin"]},
-  {id:"returns",           group:"Refresh & Returns",label:"Return Queue",         icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"returns.lease",     group:"Refresh & Returns",label:"Lease Vendor Returns", icon:null,    parentId:"refresh",  rolesAllowed:["Lead","Admin"]},
+  // â”€â”€ REFRESH & RETURNS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"refresh",           group:"Refresh Returns", label:"Refresh Returns",       icon:"\u21BB",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"refresh.command",   group:"Refresh Returns", label:"Command Center",        icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"refresh.queue",     group:"Refresh Returns", label:"Refresh Queue",         icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"refresh.techs",     group:"Refresh Returns", label:"Appointments",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"refresh.waves",     group:"Refresh Returns", label:"Wave Planner",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager"]},
+  {id:"returns",           group:"Refresh Returns", label:"Return Queue",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"returns.lease",     group:"Refresh Returns", label:"Lease Vendor Returns",  icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager"]},
 
-  // ── CASES ─────────────────────────────────────────────────────────────────
-  {id:"cases",             group:"Cases",           label:"Cases",                  icon:"\u2637",parentId:null,       rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"cases.all",         group:"Cases",           label:"All Cases",              icon:null,    parentId:"cases",    rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"cases.create",      group:"Cases",           label:"Create Case",            icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"onboarding",        group:"Cases",           label:"Onboarding",             icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"offboarding",       group:"Cases",           label:"Offboarding",            icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
-  {id:"breakfix",          group:"Cases",           label:"Break-Fix",              icon:null,    parentId:"cases",    rolesAllowed:["Lead","Technician","Admin"]},
+  // â”€â”€ CASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"cases",             group:"Cases",           label:"Cases",                  icon:"\u2637",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"cases.all",         group:"Cases",           label:"All Cases",              icon:null,    parentId:"cases",    rolesAllowed:["Executive","Manager","Technician"]},
+  {id:"cases.create",      group:"Cases",           label:"Create Case",            icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
+  {id:"onboarding",        group:"Cases",           label:"Onboarding",             icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
+  {id:"offboarding",       group:"Cases",           label:"Offboarding",            icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
+  {id:"breakfix",          group:"Cases",           label:"Break-fix",              icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
 
-  // ── OPERATIONS ────────────────────────────────────────────────────────────
-  {id:"ops",               group:"Operations",      label:"Operations",             icon:"\u25A4",parentId:null,       rolesAllowed:["Executive","Lead","Admin"]},
-  {id:"ops.dashboard",     group:"Operations",      label:"Workload Planner",       icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Admin"]},
-  {id:"ops.workload",      group:"Operations",      label:"Team Workload",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Admin"]},
-  {id:"alerts",            group:"Operations",      label:"Alerts & Exceptions",    icon:null,    parentId:"ops",      rolesAllowed:["Executive","Lead","Technician","Admin"]},
-  {id:"audit",             group:"Operations",      label:"Audit History",          icon:null,    parentId:"ops",      rolesAllowed:["Lead","Admin"]},
+  // â”€â”€ OPERATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"ops",               group:"Operations",      label:"Operations",             icon:"\u25A4",parentId:null,       rolesAllowed:["Executive","Manager"]},
+  {id:"ops.dashboard",     group:"Operations",      label:"Workload Planner",       icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
+  {id:"ops.workload",      group:"Operations",      label:"Team Workload",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
+  {id:"alerts",            group:"Operations",      label:"Alerts and Exceptions",  icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
+  {id:"audit",             group:"Operations",      label:"Audit History",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
 
-  // ── ADMINISTRATION ────────────────────────────────────────────────────────
-  {id:"admin",             group:"Administration",  label:"Administration",         icon:"\u2699",parentId:null,       rolesAllowed:["Admin"]},
-  {id:"admin.config",      group:"Administration",  label:"Admin Config",           icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
-  {id:"admin.import",      group:"Administration",  label:"AMS Import",             icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
-  {id:"automation",        group:"Administration",  label:"Lifecycle Engine",       icon:null,    parentId:"admin",    rolesAllowed:["Admin"]},
+  // â”€â”€ ADMINISTRATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  {id:"admin",             group:"Administration",  label:"Administration",         icon:"\u2699",parentId:null,       rolesAllowed:["Manager"]},
+  {id:"admin.config",      group:"Administration",  label:"Admin Config",           icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
+  {id:"admin.import",      group:"Administration",  label:"AMS Import",             icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
+  {id:"automation",        group:"Administration",  label:"Lifecycle Engine",       icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
 ];
 const buildNavTree=(items)=>{
   const roots=items.filter(item=>item.parentId==null);
@@ -142,7 +140,7 @@ const buildNavTree=(items)=>{
 const navLookupAll=Object.fromEntries(NAV_CONFIG.map(item=>[item.id,item]));
 const navTitlePrefix=(id,label)=>{
   if(id==="assets")   return "Assets";
-  if(id==="refresh")  return "Refresh & Returns";
+  if(id==="refresh")  return "Refresh Returns";
   if(id==="cases")    return "Cases";
   if(id==="ops")      return "Operations";
   if(id==="admin")    return "Administration";
@@ -244,21 +242,21 @@ function navConfigUnitTests(){
   if(!IS_DEV)return;
 
   const validConfig=[
-    {id:"root",label:"Root",icon:"R",parentId:null,rolesAllowed:["Admin"]},
-    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
+    {id:"root",label:"Root",icon:"R",parentId:null,rolesAllowed:["Manager"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Manager"]},
   ];
   const cycleConfig=[
-    {id:"a",label:"A",icon:null,parentId:"c",rolesAllowed:["Admin"]},
-    {id:"b",label:"B",icon:null,parentId:"a",rolesAllowed:["Admin"]},
-    {id:"c",label:"C",icon:null,parentId:"b",rolesAllowed:["Admin"]},
+    {id:"a",label:"A",icon:null,parentId:"c",rolesAllowed:["Manager"]},
+    {id:"b",label:"B",icon:null,parentId:"a",rolesAllowed:["Manager"]},
+    {id:"c",label:"C",icon:null,parentId:"b",rolesAllowed:["Manager"]},
   ];
   const deepConfig=[
-    {id:"root",label:"Root",icon:null,parentId:null,rolesAllowed:["Admin"]},
-    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
-    {id:"grandchild",label:"Grandchild",icon:null,parentId:"child",rolesAllowed:["Admin"]},
+    {id:"root",label:"Root",icon:null,parentId:null,rolesAllowed:["Manager"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Manager"]},
+    {id:"grandchild",label:"Grandchild",icon:null,parentId:"child",rolesAllowed:["Manager"]},
   ];
   const multiErrorConfig=[
-    {id:"dup",label:"One",icon:null,parentId:null,rolesAllowed:["Admin"]},
+    {id:"dup",label:"One",icon:null,parentId:null,rolesAllowed:["Manager"]},
     {id:"dup",label:"Two",icon:null,parentId:"missing",rolesAllowed:["BadRole"]},
   ];
 
@@ -314,7 +312,7 @@ if (IS_DEV) {
   navConfigUnitTests();
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ INVENTORY DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ INVENTORY DATA ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const INV=[
   {s:"C920s",n:"Logitech Pro HD Webcam",c:"Logitech",t:"Camera",q:8,r:7,b:"C920s",l:"Charlotte, NC (PTC)"},
   {s:"7510209",n:"Jabra Speak2",c:"Jabra",t:"Speakerphone",q:3,r:1,b:"",l:"Charlotte, NC (PTC)"},
@@ -362,7 +360,7 @@ const INV=[
   {s:"WB3023",n:"Dell 2K Camera",c:"Dell",t:"Camera",q:15,r:8,b:"",l:"Charlotte, NC (PTC)"},
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BOOKING REQUEST SEED DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ BOOKING REQUEST SEED DATA ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const BK_STAT={draft:{l:"Draft",c:C.gray,bg:C.graySoft,bd:C.grayBorder},submitted:{l:"Submitted",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},pending_approval:{l:"Pending Approval",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},approved:{l:"Approved",c:C.green,bg:C.greenSoft,bd:C.greenBorder},rejected:{l:"Rejected",c:C.red,bg:C.redSoft,bd:C.redBorder},fulfilled:{l:"Fulfilled",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},cancelled:{l:"Cancelled",c:C.gray,bg:C.graySoft,bd:C.grayBorder}};
 const SEED_BK=[
   {id:"BK-2026-0001",user:"Cara Warren",loc:"Atlanta (ATL)",type:"Refresh",ref:"RC-2026-0020",by:"Micah Harris",date:"2026-03-04",needed:"2026-03-18",status:"approved",actionBy:"Anthony Cousin",actionDate:"2026-03-05",notes:"Refresh for Cara Warren. Scheduled Mar 18.",items:[{sku:"DellPremiumPA14250",name:"Dell Pro 32GB",qty:1},{sku:"WD25",name:"Dell Pro Dock",qty:1},{sku:"P2425HE",name:"Dell 24\" Monitor w/ Dock",qty:1}],history:[{date:"2026-03-04",event:"Request created",by:"Micah Harris"},{date:"2026-03-04",event:"Submitted for approval",by:"Micah Harris"},{date:"2026-03-05",event:"Approved",by:"Anthony Cousin"}]},
@@ -374,29 +372,29 @@ const SEED_BK=[
   {id:"BK-2026-0007",user:"New Hire (TBD)",loc:"Charlotte (PTC)",type:"Incident",ref:"INC0042950",by:"HR Onboarding",date:"2026-03-06",needed:"2026-03-20",status:"draft",actionBy:null,actionDate:null,notes:"Pending new hire start date confirmation.",items:[{sku:"DellPremiumPA14250",name:"Dell Pro 32GB",qty:1},{sku:"WD25",name:"Dell Pro Dock",qty:1},{sku:"P2425HE",name:"Dell 24\" Monitor w/ Dock",qty:2},{sku:"WL3024",name:"Dell Wireless Headset",qty:1},{sku:"WB3023",name:"Dell 2K Camera",qty:1}],history:[{date:"2026-03-06",event:"Draft created",by:"HR Onboarding"}]},
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ REFRESH DATA (compact) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// ─── SHARED SHIPPING SCHEMA ───────────────────────────────────────────────────
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ REFRESH DATA (compact) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+// â”€â”€â”€ SHARED SHIPPING SCHEMA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Normalized shipping object used across onboarding, offboarding, returns,
 // refresh cases, and break-fix workflows. Designed to map 1:1 to the FedEx
 // Ship API when real integration is added.
 //
 // DIRECTION BY WORKFLOW TYPE:
-//   onboarding  — outbound only  (device shipped TO the new employee)
-//   offboarding — return only    (device shipped FROM the employee back to warehouse)
-//   refresh     — both           (outbound: new device TO user; return: old device FROM user)
-//   returns     — return only    (device shipped back to warehouse for any reason)
-//   break-fix   — both possible  (outbound: loaner/replacement TO user; return: broken unit FROM user)
+//   onboarding  â€” outbound only  (device shipped TO the new employee)
+//   offboarding â€” return only    (device shipped FROM the employee back to warehouse)
+//   refresh     â€” both           (outbound: new device TO user; return: old device FROM user)
+//   returns     â€” return only    (device shipped back to warehouse for any reason)
+//   break-fix   â€” both possible  (outbound: loaner/replacement TO user; return: broken unit FROM user)
 //
 // FUTURE FEDEX INTEGRATION:
-//   outbound.{*}  → POST /v1/ship/shipments   (ship-to: recipient address)
-//   return.{*}    → POST /v1/ship/shipments   (ship-to: warehouse, returnShipmentType: PRINT_RETURN_LABEL)
-//   labelId       → FedEx masterTrackingNumber or labelResponse.shipmentId
-//   labelStatus   → polled via GET /v1/track/trackingnumbers
+//   outbound.{*}  â†’ POST /v1/ship/shipments   (ship-to: recipient address)
+//   return.{*}    â†’ POST /v1/ship/shipments   (ship-to: warehouse, returnShipmentType: PRINT_RETURN_LABEL)
+//   labelId       â†’ FedEx masterTrackingNumber or labelResponse.shipmentId
+//   labelStatus   â†’ polled via GET /v1/track/trackingnumbers
 //
 // BACKWARD COMPAT: existing records keep flat `track` and `shipAddr` fields.
 // Use getTracking(rec) and getShipAddress(rec) for safe reads across old/new records.
-// ─────────────────────────────────────────────────────────────────────────────
-// NULL_SHIP_LEG through mkShipLeg — imported from ./features/cases/shipping.js
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// NULL_SHIP_LEG through mkShipLeg â€” imported from ./features/cases/shipping.js
 
 const RF_S={pending_contact:{s:"Pending",c:C.gray,bg:C.graySoft,bd:C.grayBorder},follow_up:{s:"Follow-Up",c:C.red,bg:C.redSoft,bd:C.redBorder},scheduled:{s:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},provisioning:{s:"Provisioning",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},deploy_complete:{s:"Deployed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},return_pending:{s:"Ret. Pending",c:C.red,bg:C.redSoft,bd:C.redBorder},checked_in:{s:"Checked In",c:C.green,bg:C.greenSoft,bd:C.greenBorder},closed:{s:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder}};
 const CASES=[
@@ -409,44 +407,44 @@ const CASES=[
   {id:"RC-2026-0060",user:"Angeley Vang",office:"Charlotte (CC3)",at:"TP-2802",dte:86,urg:"HIGH",status:"checked_in",tech:"Jakob Null",sd:"2026-02-25",wave:"CC3 Q2 2026"},
   {id:"RC-2026-0070",user:"Nicholas Prince",office:"Charlotte (CC3)",at:"TP-2805",dte:86,urg:"HIGH",status:"closed",tech:"Jakob Null",sd:"2026-02-18",wave:"CC3 Q2 2026"},
 ];
-// ─── TECHNICIAN ROSTER ────────────────────────────────────────────────────
+// â”€â”€â”€ TECHNICIAN ROSTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // FIELD REFERENCE
-// ── Identity (display + join key) ────────────────────────────────────────
-//   id     — snake_case unique key; used as React key only
-//   name   — full name; PRIMARY JOIN KEY matched against case.tech and
-//            auditEvent.by throughout all modules — keep exact spelling
-//   role   — display label shown in Command Center, Technician Dashboard,
-//            and Admin → Technicians table
-//   home   — primary office; display only
-//   travel — true if tech makes remote site visits; controls trip badge
+// â”€â”€ Identity (display + join key) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//   id     â€” snake_case unique key; used as React key only
+//   name   â€” full name; PRIMARY JOIN KEY matched against case.tech and
+//            auditEvent.by throughout all modules â€” keep exact spelling
+//   role   â€” display label shown in Command Center, Technician Dashboard,
+//            and Admin â†’ Technicians table
+//   home   â€” primary office; display only
+//   travel â€” true if tech makes remote site visits; controls trip badge
 //            visibility in the Technician Dashboard (refresh.techs)
-//   trip   — trip label string shown as a badge when travel===true and
+//   trip   â€” trip label string shown as a badge when travel===true and
 //            trip is non-null (e.g. "ATL May 1-10"); null when not traveling
 //
-// ── Planning (feed workload calculations) ────────────────────────────────
-//   cap  — tasks per day this tech can handle
-//          Used in: OperationsWorkloadPlanner → capRows → cap * 5 = weekly
+// â”€â”€ Planning (feed workload calculations) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//   cap  â€” tasks per day this tech can handle
+//          Used in: OperationsWorkloadPlanner â†’ capRows â†’ cap * 5 = weekly
 //          capacity target, compared against scheduled task count to produce
 //          utilization % and Overloaded / Normal / Underutilized status
 //          Typical values: 8 for full-time field tech, 6 for lead/coordinator
 //
-//   avg  — average minutes to complete one refresh task (end-to-end)
-//          Used in: ExecutiveCommandCenter → avgRefreshCycleDays KPI
-//            formula: (mean avg across team) × 0.28 = estimated days
+//   avg  â€” average minutes to complete one refresh task (end-to-end)
+//          Used in: ExecutiveCommandCenter â†’ avgRefreshCycleDays KPI
+//            formula: (mean avg across team) Ã— 0.28 = estimated days
 //          Also shown in: techPerf table (Exec view), Technician Dashboard
 //          Adjust this to match observed actuals once real data exists.
-//          Typical starting range: 35–50 min for remote/shipped refreshes,
-//          25–35 min for walk-in / onsite sessions.
+//          Typical starting range: 35â€“50 min for remote/shipped refreshes,
+//          25â€“35 min for walk-in / onsite sessions.
 //
 // HOW TO TUNE
 //   - cap:  lower for leads or coordinators who split time on non-field work
 //   - avg:  update once you have real refresh completion time data from cases
 //   - travel / trip: set trip to a string when a tech is on a scheduled visit
 //
-// ─────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TECHS=[
-  // ── Identity ──────────────────────────────── ── Planning ──
+  // â”€â”€ Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ â”€â”€ Planning â”€â”€
   // id                  name                role           home               travel trip    cap  avg
   {id:"jon_dinh",        name:"Jon Dinh",        role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
   {id:"anthony_cousin",  name:"Anthony Cousin",  role:"Technician", home:"Charlotte (PTC)",travel:false,trip:null, cap:8, avg:40},
@@ -462,7 +460,7 @@ const TECHS=[
   // case records and audit events for workload filtering to work.
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ONBOARDING DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ONBOARDING DATA ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const OB_STAT={pending_scheduling:{l:"Pending Scheduling",c:C.gray,bg:C.graySoft,bd:C.grayBorder},scheduled:{l:"Scheduled",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},in_progress:{l:"In Progress",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},completed:{l:"Completed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},follow_up:{l:"Follow-Up",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},canceled:{l:"Canceled",c:C.gray,bg:C.graySoft,bd:C.grayBorder},no_show:{l:"No Show",c:C.red,bg:C.redSoft,bd:C.redBorder}};
 const ONBOARDING=[
   {id:"OB-0001",user:"Dylan Hodgson",email:"dhodgson@amwins.com",phone:"",sn:"BK37V9725223P7",oldSn:"",opco:"San Francisco, CA",loc:"San Francisco, CA",status:"completed",appt:"Onsite",tech:"Micah Harris",date:"2026-02-11",track:"888619420670",notes:"MGAWBNC-SFO-20901",process_type:"onboarding",shipAddr:"",
@@ -477,7 +475,7 @@ const ONBOARDING=[
     shipping:{...NULL_SHIPPING}},
   {id:"OB-0006",user:"Taylor Whitfield",email:"twhitfield@amwins.com",phone:"704-555-0182",sn:"BK37VDH25223P7",oldSn:"",opco:"Charlotte (PTC)",loc:"Charlotte (PTC)",status:"scheduled",appt:"Onsite",tech:"Anthony Cousin",date:"2026-03-10",track:"",notes:"New hire start Mar 10. Desk kit reserved.",process_type:"onboarding",shipAddr:"",
     shipping:{...NULL_SHIPPING}},
-  {id:"OB-0007",user:"Priya Nagarajan",email:"pnagarajan@amwins.com",phone:"",sn:"0F3PHDR24193GT",oldSn:"",opco:"Remote — Dallas",loc:"Dallas, TX",status:"scheduled",appt:"Virtual",tech:"Micah Harris",date:"2026-03-12",track:"888910445521",notes:"Remote onboarding. Shipped to home address.",process_type:"onboarding",shipAddr:"2411 Elm Creek Ct, Dallas TX 75201",
+  {id:"OB-0007",user:"Priya Nagarajan",email:"pnagarajan@amwins.com",phone:"",sn:"0F3PHDR24193GT",oldSn:"",opco:"Remote â€” Dallas",loc:"Dallas, TX",status:"scheduled",appt:"Virtual",tech:"Micah Harris",date:"2026-03-12",track:"888910445521",notes:"Remote onboarding. Shipped to home address.",process_type:"onboarding",shipAddr:"2411 Elm Creek Ct, Dallas TX 75201",
     shipping:{address:mkAddress("2411 Elm Creek Ct","Dallas","TX","75201","Priya Nagarajan",true),outbound:mkShipLeg("888910445521"),return:{...NULL_SHIP_LEG}}},
   {id:"OB-0008",user:"Marcus Johnson",email:"mjohnson@amwins.com",phone:"312-555-0199",sn:"",oldSn:"",opco:"Chicago (CHI)",loc:"Chicago, IL",status:"pending_scheduling",appt:"",tech:"",date:"",track:"",notes:"Awaiting HR start date confirmation. Desk location TBD.",process_type:"onboarding",shipAddr:"",
     shipping:{...NULL_SHIPPING}},
@@ -487,36 +485,36 @@ const ONBOARDING=[
     shipping:{address:mkAddress("","Scottsdale","AZ","","Carlos Mendez",false),outbound:mkShipLeg("888910331742"),return:{...NULL_SHIP_LEG}}},
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OFFBOARDING DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// ─── OFFBOARDING WORKFLOW ──────────────────────────────────────────────────
-// Real workflow: ServiceNow ticket → log to SharePoint → initial email →
-//               follow-up 1 → follow-up 2 → escalate → resolve → close
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ OFFBOARDING DATA ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+// â”€â”€â”€ OFFBOARDING WORKFLOW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Real workflow: ServiceNow ticket â†’ log to SharePoint â†’ initial email â†’
+//               follow-up 1 â†’ follow-up 2 â†’ escalate â†’ resolve â†’ close
 //
 // Integration hooks (all frontend-only for now):
-//   logToTracker  → future: POST to SharePoint list
-//   sendEmail     → future: trigger Power Automate / ServiceNow email action
-//   escalate      → future: update ServiceNow ticket + notify manager
-// ──────────────────────────────────────────────────────────────────────────
-// ─── OFFBOARDING WORKFLOW MODEL ───────────────────────────────────────────────
+//   logToTracker  â†’ future: POST to SharePoint list
+//   sendEmail     â†’ future: trigger Power Automate / ServiceNow email action
+//   escalate      â†’ future: update ServiceNow ticket + notify manager
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ OFFBOARDING WORKFLOW MODEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// STATUS × RECOVERY LOOP design:
+// STATUS Ã— RECOVERY LOOP design:
 //   A single `status` field drives the progress bar and action gating.
 //   `recoveryLoop` (1 or 2) differentiates the first attempt from the second.
 //   Within loop 1, the normal sequence is:
-//     new → label_sent → awaiting_movement →
-//     followup_1_sent → followup_2_sent → needs_review →
-//     investigating → resolved → closed
+//     new â†’ label_sent â†’ awaiting_movement â†’
+//     followup_1_sent â†’ followup_2_sent â†’ needs_review â†’
+//     investigating â†’ resolved â†’ closed
 //   If investigation surfaces a confirmed address, the tech creates a new label
 //   and the case re-enters label_sent with recoveryLoop=2 and isOverdue=true.
-//   Loop 2 then runs: label_sent → awaiting_movement →
-//     secondary_followup_1 → secondary_followup_2 → escalated → resolved → closed
+//   Loop 2 then runs: label_sent â†’ awaiting_movement â†’
+//     secondary_followup_1 â†’ secondary_followup_2 â†’ escalated â†’ resolved â†’ closed
 //
 // FUTURE INTEGRATION HOOKS:
-//   dispatch(id, "send_label")          → FedEx POST /v1/ship/shipments
-//   dispatch(id, "send_followup_1")     → email service / Power Automate trigger
-//   shipping.return.lastMovementAt      → polled via FedEx GET /v1/track/{trackingNumber}
-//   recoveryLoop===2 && isOverdue===true → flag for manager dashboard / SLA breach alert
-// ─────────────────────────────────────────────────────────────────────────────
+//   dispatch(id, "send_label")          â†’ FedEx POST /v1/ship/shipments
+//   dispatch(id, "send_followup_1")     â†’ email service / Power Automate trigger
+//   shipping.return.lastMovementAt      â†’ polled via FedEx GET /v1/track/{trackingNumber}
+//   recoveryLoop===2 && isOverdue===true â†’ flag for manager dashboard / SLA breach alert
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const OFF_STAT={
   new:               {l:"New",               c:C.gray,   bg:C.graySoft,   bd:C.grayBorder},
   label_sent:        {l:"Label Sent",        c:C.cyan,   bg:C.cyanSoft,   bd:C.cyanBorder},
@@ -534,13 +532,13 @@ const OFF_STAT={
 // Loop-1 stage order for the progress bar (loop 2 uses the same bar, rebased)
 const OFF_STAGES_L1=["new","label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","resolved","closed"];
 const OFF_STAGES_L2=["investigating","label_sent","awaiting_movement","secondary_followup_1","secondary_followup_2","escalated","resolved","closed"];
-// ─── OFFBOARDING WORKLOAD CONFIG ──────────────────────────────────────────────
+// â”€â”€â”€ OFFBOARDING WORKLOAD CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // OFFBOARDING_WORKLOAD_MINUTES: estimated effort per active offboarding case.
 // Tune this value as you gather real data on coordinator time-per-case.
-// Consumed by: TeamWorkloadView, OperationsWorkloadPlanner → capRows
+// Consumed by: TeamWorkloadView, OperationsWorkloadPlanner â†’ capRows
 const OFFBOARDING_WORKLOAD_MINUTES=40;
 const OFF_ACTIVE_STATUSES=["new","label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","secondary_followup_1","secondary_followup_2","escalated"];
-// Helper — returns a local ISO timestamp string
+// Helper â€” returns a local ISO timestamp string
 const offNow=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
 // Append an event to an offboarding record's history (immutable)
 const offAddEvent=(rec,type,by,detail)=>({
@@ -549,15 +547,15 @@ const offAddEvent=(rec,type,by,detail)=>({
 });
 
 const OFFBOARDING=[
-  // ── Helper: build the expanded shipping.return object ─────────────────────
+  // â”€â”€ Helper: build the expanded shipping.return object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // shipping.return shape:
   //   carrier, trackingNumber, labelId, labelStatus, createdAt,
-  //   lastMovementAt,  ← polled from FedEx; null until first scan
+  //   lastMovementAt,  â† polled from FedEx; null until first scan
   //   destinationType: "warehouse"|"unknown"
   //   address: NULL_SHIP_ADDRESS-shaped object
-  // ─────────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // OFF-0001 – closed, walk-in return, loop 1
+  // OFF-0001 â€“ closed, walk-in return, loop 1
   {
     id:"OFF-0001",status:"closed",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
@@ -583,7 +581,7 @@ const OFFBOARDING=[
       {ts:"2026-01-15 11:30",type:"closed",by:"ITAM Coordinator",detail:"Case closed."},
     ],
   },
-  // OFF-0002 – closed, walk-in return, loop 1
+  // OFF-0002 â€“ closed, walk-in return, loop 1
   {
     id:"OFF-0002",status:"closed",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
@@ -609,7 +607,7 @@ const OFFBOARDING=[
       {ts:"2026-01-20 14:30",type:"closed",by:"Anthony Cousin",detail:"Closed."},
     ],
   },
-  // OFF-0003 – awaiting_movement, loop 1, label sent but no scan yet
+  // OFF-0003 â€“ awaiting_movement, loop 1, label sent but no scan yet
   {
     id:"OFF-0003",status:"awaiting_movement",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:true,
@@ -634,7 +632,7 @@ const OFFBOARDING=[
       {ts:"2026-02-10 09:05",type:"awaiting_movement",by:"System","detail":"Case moved to Awaiting Movement. FedEx scan pending."},
     ],
   },
-  // OFF-0004 – followup_2_sent, loop 1, no tracking movement
+  // OFF-0004 â€“ followup_2_sent, loop 1, no tracking movement
   {
     id:"OFF-0004",status:"followup_2_sent",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
@@ -661,7 +659,7 @@ const OFFBOARDING=[
       {ts:"2026-03-01 09:00",type:"followup_2_sent",by:"ITAM Coordinator",detail:"Still no movement. Follow-up 2 sent."},
     ],
   },
-  // OFF-0005 – needs_review, loop 1 — ready for escalation decision
+  // OFF-0005 â€“ needs_review, loop 1 â€” ready for escalation decision
   {
     id:"OFF-0005",status:"needs_review",recoveryLoop:1,isOverdue:true,needsReview:true,
     investigationStatus:"pending",userEmailConfirmed:true,userAddressConfirmed:false,
@@ -689,7 +687,7 @@ const OFFBOARDING=[
       {ts:"2026-03-10 09:00",type:"needs_review",by:"ITAM Coordinator",detail:"Flagged Needs Review. No response or scan after 21 days."},
     ],
   },
-  // OFF-0006 – investigating, loop 1 — address being verified
+  // OFF-0006 â€“ investigating, loop 1 â€” address being verified
   {
     id:"OFF-0006",status:"investigating",recoveryLoop:1,isOverdue:true,needsReview:true,
     investigationStatus:"address_lookup",userEmailConfirmed:true,userAddressConfirmed:false,
@@ -718,7 +716,7 @@ const OFFBOARDING=[
       {ts:"2026-03-14 10:00",type:"investigating",by:"ITAM Coordinator",detail:"Investigation started. Contacting HR for current address."},
     ],
   },
-  // OFF-0007 – label_sent loop 2, OVERDUE — secondary label created after address confirmed
+  // OFF-0007 â€“ label_sent loop 2, OVERDUE â€” secondary label created after address confirmed
   {
     id:"OFF-0007",status:"label_sent",recoveryLoop:2,isOverdue:true,needsReview:false,
     investigationStatus:"address_confirmed",userEmailConfirmed:true,userAddressConfirmed:true,
@@ -735,10 +733,10 @@ const OFFBOARDING=[
     shipping:{
       address:mkAddress("44 Ocean Ave","North Kingstown","RI","02852","Monique Ferro",true),
       outbound:{...NULL_SHIP_LEG},
-      // Loop 2 label — new tracking number, destination confirmed address
+      // Loop 2 label â€” new tracking number, destination confirmed address
       return:{...mkShipLeg("794500001234567","created"),destinationType:"warehouse",lastMovementAt:null},
     },
-    notes:"⚠️ RECOVERY LOOP 2 — OVERDUE. New label sent to confirmed address 3/21.",
+    notes:"âš ï¸ RECOVERY LOOP 2 â€” OVERDUE. New label sent to confirmed address 3/21.",
     history:[
       {ts:"2026-02-19 10:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 1] Return label created and emailed."},
       {ts:"2026-02-19 10:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
@@ -750,7 +748,7 @@ const OFFBOARDING=[
       {ts:"2026-03-21 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 2] Secondary label created (794500001234567) and emailed to confirmed address."},
     ],
   },
-  // OFF-0008 – escalated, loop 2, OVERDUE — secondary follow-ups exhausted
+  // OFF-0008 â€“ escalated, loop 2, OVERDUE â€” secondary follow-ups exhausted
   {
     id:"OFF-0008",status:"escalated",recoveryLoop:2,isOverdue:true,needsReview:true,
     investigationStatus:"address_confirmed",userEmailConfirmed:true,userAddressConfirmed:true,
@@ -769,7 +767,7 @@ const OFFBOARDING=[
       outbound:{...NULL_SHIP_LEG},
       return:{...mkShipLeg("794600009876543","created"),destinationType:"warehouse",lastMovementAt:null},
     },
-    notes:"⚠️ RECOVERY LOOP 2 — OVERDUE 365+ DAYS. Both secondary follow-ups sent. Escalated to manager.",
+    notes:"âš ï¸ RECOVERY LOOP 2 â€” OVERDUE 365+ DAYS. Both secondary follow-ups sent. Escalated to manager.",
     history:[
       {ts:"2025-03-10 09:00",type:"label_sent",by:"ITAM Coordinator",detail:"[Loop 1] Return label emailed. SCTASK0189091."},
       {ts:"2025-03-10 09:05",type:"awaiting_movement",by:"System",detail:"Awaiting FedEx scan."},
@@ -785,7 +783,7 @@ const OFFBOARDING=[
       {ts:"2025-06-20 10:00",type:"escalated",by:"ITAM Coordinator",detail:"Escalated to manager. Device unrecovered 100+ days in loop 2."},
     ],
   },
-  // OFF-0009 – followup_1_sent, loop 1 — 7 days no movement
+  // OFF-0009 â€“ followup_1_sent, loop 1 â€” 7 days no movement
   {
     id:"OFF-0009",status:"followup_1_sent",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:false,
@@ -811,7 +809,7 @@ const OFFBOARDING=[
       {ts:"2026-02-25 09:00",type:"followup_1_sent",by:"ITAM Coordinator",detail:"No movement after 7 days. Follow-up 1 sent."},
     ],
   },
-  // OFF-0010 – awaiting_movement, loop 1 — fresh label, no scan yet
+  // OFF-0010 â€“ awaiting_movement, loop 1 â€” fresh label, no scan yet
   {
     id:"OFF-0010",status:"awaiting_movement",recoveryLoop:1,isOverdue:false,needsReview:false,
     investigationStatus:null,userEmailConfirmed:true,userAddressConfirmed:true,
@@ -838,33 +836,33 @@ const OFFBOARDING=[
   },
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BREAK-FIX REPAIR CENTER DATA Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ BREAK-FIX REPAIR CENTER DATA ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const BF_STAT={ticket_submitted:{l:"Ticket Submitted",c:C.gray,bg:C.graySoft,bd:C.grayBorder},vendor_review:{l:"Vendor Review",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},repair_approved:{l:"Repair Approved",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},device_sent:{l:"Device Sent",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},repair_in_progress:{l:"Repair In Progress",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},device_returned:{l:"Device Returned",c:C.green,bg:C.greenSoft,bd:C.greenBorder},closed:{l:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},replacement_issued:{l:"Replacement Issued",c:C.accent,bg:C.accentSoft,bd:C.accentBorder}};
 const BF_STAGES=["ticket_submitted","vendor_review","repair_approved","device_sent","repair_in_progress","device_returned","closed"];
 const BREAKFIX=[
-  // Break-fix: both legs possible — return: broken device TO vendor; outbound: replacement FROM warehouse TO user
-  // BF-0001: repair_in_progress — device already at Microsoft, no replacement issued yet
+  // Break-fix: both legs possible â€” return: broken device TO vendor; outbound: replacement FROM warehouse TO user
+  // BF-0001: repair_in_progress â€” device already at Microsoft, no replacement issued yet
   {id:"BF-0001",asset:"0F37Q6G24053FB",sn:"0F37Q6G24053FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Tina Walters",tech:"Micah Harris",status:"repair_in_progress",issue:"Network connectivity issues | Cant wipe device via intune",msCase:"MS-4820193",submitted:"2026-02-19",lastUpdate:"2026-03-04",replacementSn:"",process_type:"break_fix",notes:"Sent to Microsoft. Service order pending.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Tina Walters",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"in_transit"}}},
-  // BF-0002: repair_in_progress — device at Microsoft
+  // BF-0002: repair_in_progress â€” device at Microsoft
   {id:"BF-0002",asset:"BK334PM23463FB",sn:"BK334PM23463FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Greg Marshall",tech:"Anthony Cousin",status:"repair_in_progress",issue:"Device wont power on",msCase:"MS-4820207",submitted:"2026-02-25",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"No POST. Suspected motherboard. Under warranty.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Greg Marshall"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"in_transit"}}},
-  // BF-0003: device_sent — shipping box sent to user, device in transit to MS
+  // BF-0003: device_sent â€” shipping box sent to user, device in transit to MS
   {id:"BF-0003",asset:"0F34C6424223GT",sn:"0F34C6424223GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Amanda Reyes",tech:"Isaiah Gourdine",status:"device_sent",issue:"Bad USB-C Port",msCase:"MS-4820211",submitted:"2026-02-25",lastUpdate:"2026-03-01",replacementSn:"",process_type:"break_fix",notes:"Shipping box sent. User packaging device.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Amanda Reyes"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"created"}}},
-  // BF-0004: repair_in_progress — no tracking yet
+  // BF-0004: repair_in_progress â€” no tracking yet
   {id:"BF-0004",asset:"0F38TM324343GT",sn:"0F38TM324343GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Derek Collins",tech:"Micah Harris",status:"repair_in_progress",issue:"System Crash",msCase:"MS-4820215",submitted:"2026-02-25",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"BSOD frequent. Diagnostics requested by MS.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0005: vendor_review — awaiting MS decision on replacement
+  // BF-0005: vendor_review â€” awaiting MS decision on replacement
   {id:"BF-0005",asset:"BK3368Y23463FB",sn:"BK3368Y23463FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Lisa Park",tech:"Anthony Cousin",status:"vendor_review",issue:"System Crashes & does not connect to VPN",msCase:"MS-4820220",submitted:"2026-02-25",lastUpdate:"2026-02-28",replacementSn:"",process_type:"break_fix",notes:"MS reviewing logs. May require replacement.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0006: repair_approved — awaiting shipment instructions from MS
+  // BF-0006: repair_approved â€” awaiting shipment instructions from MS
   {id:"BF-0006",asset:"0F34XMP24433GT",sn:"0F34XMP24433GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Chris Nguyen",tech:"Isaiah Gourdine",status:"repair_approved",issue:"Cracked screen",msCase:"MS-4820225",submitted:"2026-02-25",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Accidental damage. Repair approved under Complete for Business.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0007: repair_in_progress — at MS engineering
+  // BF-0007: repair_in_progress â€” at MS engineering
   {id:"BF-0007",asset:"BK337DB25203HJ",sn:"BK337DB25203HJ",model:"Surface Laptop 7",mfr:"Microsoft",user:"Natalie Brooks",tech:"Micah Harris",status:"repair_in_progress",issue:"Stuck in provisioning loop",msCase:"MS-4820230",submitted:"2026-02-27",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Firmware issue. MS escalated to engineering team.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0008 through BF-0013: ticket_submitted — no shipping activity yet
+  // BF-0008 through BF-0013: ticket_submitted â€” no shipping activity yet
   {id:"BF-0008",asset:"BK33DCV24023FB",sn:"BK33DCV24023FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Robert Kim",tech:"Anthony Cousin",status:"ticket_submitted",issue:"Damaged mousepad",msCase:"",submitted:"2026-03-03",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Awaiting MS case creation.",
     shipping:{...NULL_SHIPPING}},
   {id:"BF-0009",asset:"0F3MYV424193GT",sn:"0F3MYV424193GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Emily Watson",tech:"Isaiah Gourdine",status:"ticket_submitted",issue:"Bad USB-C Port",msCase:"",submitted:"2026-03-03",lastUpdate:"2026-03-03",replacementSn:"",process_type:"break_fix",notes:"Second USB-C failure this model. Warranty claim pending.",
@@ -877,37 +875,35 @@ const BREAKFIX=[
     shipping:{...NULL_SHIPPING}},
   {id:"BF-0013",asset:"0F37PPK24053FB",sn:"0F37PPK24053FB",model:"Surface Laptop 5",mfr:"Microsoft",user:"Michelle Torres",tech:"Micah Harris",status:"ticket_submitted",issue:"Bad USB-C Port",msCase:"",submitted:"2026-03-05",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"Port intermittent. User has loaner dock.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0014: closed — repaired unit returned to user
+  // BF-0014: closed â€” repaired unit returned to user
   {id:"BF-0014",asset:"0F34CB624223GT",sn:"0F34CB624223GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Kevin Patel",tech:"Anthony Cousin",status:"closed",issue:"Display is damaged",msCase:"MS-4819850",submitted:"2026-01-05",lastUpdate:"2026-02-15",replacementSn:"Same unit repair",process_type:"break_fix",notes:"Screen replaced by MS. Returned to user.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Kevin Patel"},outbound:{...NULL_SHIP_LEG,labelStatus:"delivered"},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
-  // BF-0015: closed — Dell onsite tech, no shipping needed
+  // BF-0015: closed â€” Dell onsite tech, no shipping needed
   {id:"BF-0015",asset:"8N0S1H4",sn:"8N0S1H4",model:"Dell PA14250",mfr:"Dell",user:"Brian Wells",tech:"Isaiah Gourdine",status:"closed",issue:"Bad fan",msCase:"DELL-SR-1120045",submitted:"2026-02-10",lastUpdate:"2026-02-28",replacementSn:"Same unit repair",process_type:"break_fix",notes:"Fan replaced under ProSupport. Dell onsite tech.",
     shipping:{...NULL_SHIPPING}},
-  // BF-0016: replacement_issued — both legs: broken device returned, replacement shipped out
+  // BF-0016: replacement_issued â€” both legs: broken device returned, replacement shipped out
   {id:"BF-0016",asset:"BK3393G25243P7",sn:"BK3393G25243P7",model:"Surface Laptop 7",mfr:"Microsoft",user:"Laura Chen",tech:"Micah Harris",status:"replacement_issued",issue:"Liquid damage - coffee",msCase:"MS-4820100",submitted:"2026-02-13",lastUpdate:"2026-03-01",replacementSn:"BK33W4R25293P7",process_type:"break_fix",notes:"Not covered under warranty. Complete for Business claim. Replacement issued.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Laura Chen"},outbound:{...NULL_SHIP_LEG,labelStatus:"delivered"},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
-  // BF-0017: ticket_submitted — no shipping yet
+  // BF-0017: ticket_submitted â€” no shipping yet
   {id:"BF-0017",asset:"0F339FB25033GT",sn:"0F339FB25033GT",model:"Surface Laptop 6",mfr:"Microsoft",user:"Thomas Reed",tech:"Anthony Cousin",status:"ticket_submitted",issue:"Device will not boot up",msCase:"",submitted:"2026-03-05",lastUpdate:"2026-03-05",replacementSn:"",process_type:"break_fix",notes:"No signs of life. Potential PSU failure.",
     shipping:{...NULL_SHIPPING}},
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RETURN QUEUE DATA (multi-process) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-const RTN_REASON={refresh_return:{l:"Refresh Return",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},offboarding_return:{l:"Offboarding Return",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},unassigned_recovery:{l:"Unassigned Recovery",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},lease_vendor_return:{l:"Lease Vendor Return",c:C.gray,bg:C.graySoft,bd:C.grayBorder}};
-const RTN_STAT={label_sent:{l:"Label Sent",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},in_transit:{l:"In Transit",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},received:{l:"Received",c:C.green,bg:C.greenSoft,bd:C.greenBorder},inspecting:{l:"Inspecting",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},staged_for_lfs:{l:"Staged for LFS",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},shipped_to_vendor:{l:"Shipped to Vendor",c:C.gray,bg:C.graySoft,bd:C.grayBorder},closed:{l:"Closed",c:C.green,bg:C.greenSoft,bd:C.greenBorder},overdue:{l:"Overdue",c:C.red,bg:C.redSoft,bd:C.redBorder}};
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ RETURN QUEUE DATA (multi-process) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const RETURNS=[
-  // refresh_return: return leg only — old device shipped FROM user back to warehouse
+  // refresh_return: return leg only â€” old device shipped FROM user back to warehouse
   {id:"RTN-0001",asset:"TP-2801",sn:"TP-2801",model:"Lenovo ThinkPad Yoga",user:"Sam Vives",reason:"refresh_return",status:"label_sent",tech:"Anthony Cousin",date:"2026-03-03",track:"FX-RTN-2026-0045",ref:"RC-2026-0045",process_type:"refresh",notes:"Prepaid FedEx label emailed. 10-day SLA.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Sam Vives",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("FX-RTN-2026-0045","created")}},
-  // refresh_return: already received — no active tracking needed
+  // refresh_return: already received â€” no active tracking needed
   {id:"RTN-0002",asset:"TP-2654",sn:"TP-2654",model:"Lenovo ThinkPad X1",user:"Lynn Sailors",reason:"refresh_return",status:"received",tech:"Warehouse Tech",date:"2026-03-05",track:"",ref:"RC-2026-0055",process_type:"refresh",notes:"Scanned at PTC warehouse. Condition: Good.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Lynn Sailors"},outbound:{...NULL_SHIP_LEG},return:{...NULL_SHIP_LEG,labelStatus:"delivered"}}},
   // refresh_return: hand delivery, no carrier label
   {id:"RTN-0003",asset:"TP-2802",sn:"TP-2802",model:"Lenovo ThinkPad Yoga",user:"Angeley Vang",reason:"refresh_return",status:"staged_for_lfs",tech:"Jakob Null",date:"2026-02-25",track:"",ref:"RC-2026-0060",process_type:"refresh",notes:"CC3 hand delivery. Staged for LFS batch CC3-2026-001.",
     shipping:{...NULL_SHIPPING}},
-  // lease_vendor_return: return leg only — LFS batch shipment
+  // lease_vendor_return: return leg only â€” LFS batch shipment
   {id:"RTN-0004",asset:"TP-2805",sn:"TP-2805",model:"Lenovo ThinkPad Yoga",user:"Nicholas Prince",reason:"lease_vendor_return",status:"shipped_to_vendor",tech:"Jakob Null",date:"2026-02-18",track:"LFS-2026-CC3-001",ref:"RC-2026-0070",process_type:"retirement",notes:"LFS batch shipped. 4 devices. Vendor confirmed receipt Mar 1.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"LFS Vendor",company:"LFS",city:"Charlotte",state:"NC",residential:false},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("LFS-2026-CC3-001","delivered","LFS")}},
-  // offboarding_return: return leg only — label sent, awaiting pickup
+  // offboarding_return: return leg only â€” label sent, awaiting pickup
   {id:"RTN-0005",asset:"LT-4455",sn:"PF3LN9T4",model:"Lenovo ThinkPad X1",user:"Rachel Torres",reason:"offboarding_return",status:"label_sent",tech:"",date:"2026-03-04",track:"FX-RTN-2026-0078",ref:"OFF-0005",process_type:"offboarding",notes:"AD disabled. Return label sent. 5-day SLA started.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Rachel Torres"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("FX-RTN-2026-0078","created")}},
   // offboarding_return: no label created, employee unresponsive
@@ -916,10 +912,10 @@ const RETURNS=[
   // offboarding_return: label sent, in transit
   {id:"RTN-0007",asset:"LT-2870",sn:"012393321957",model:"Surface Pro 8",user:"Wayne Brewer",reason:"offboarding_return",status:"in_transit",tech:"",date:"2026-02-18",track:"888888189567",ref:"OFF-0006",process_type:"offboarding",notes:"Label sent 2/18. Tracking shows in transit.",
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Wayne Brewer",city:"Charlotte",state:"NC"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("888888189567","in_transit")}},
-  // unassigned_recovery: no shipping — device found onsite
+  // unassigned_recovery: no shipping â€” device found onsite
   {id:"RTN-0008",asset:"LT-3890",sn:"UNASSIGNED-001",model:"Dell Latitude 5440",user:"\u2014",reason:"unassigned_recovery",status:"inspecting",tech:"Isaiah Gourdine",date:"2026-03-01",track:"",ref:"",process_type:"redeployment",notes:"Found unassigned in BHM office. No AMS record. Under investigation.",
     shipping:{...NULL_SHIPPING}},
-  // unassigned_recovery: no shipping — device recovered from vacated desk
+  // unassigned_recovery: no shipping â€” device recovered from vacated desk
   {id:"RTN-0009",asset:"LT-3901",sn:"UNASSIGNED-002",model:"Surface Laptop 5",user:"\u2014",reason:"unassigned_recovery",status:"received",tech:"Anthony Cousin",date:"2026-02-28",track:"",ref:"",process_type:"redeployment",notes:"Recovered from vacated desk at PTC. Wiped and re-imaged for redeployment.",
     shipping:{...NULL_SHIPPING}},
   // refresh_return: in transit, old device shipped back from remote user
@@ -933,7 +929,7 @@ const RETURNS=[
     shipping:{address:{...NULL_SHIP_ADDRESS,recipientName:"Daija Francis",city:"Atlanta",state:"GA"},outbound:{...NULL_SHIP_LEG},return:mkShipLeg("881217933140","in_transit")}},
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ONBOARDING MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ONBOARDING MODULE ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const ObChip=({s})=>{const x=OB_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
 function OnboardingModule({setToast,go,auditEvents,setAuditEvents}){
   const [sel,setSel]=useState(null);
@@ -983,7 +979,7 @@ function OnboardingModule({setToast,go,auditEvents,setAuditEvents}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OFFBOARDING MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ OFFBOARDING MODULE ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const OffChip=({s,loop,isOverdue})=>{const x=OFF_STAT[s];if(!x)return null;return (<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}{loop===2&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:C.red,color:"#FFF",marginLeft:3,fontWeight:700}}>L2</span>}{isOverdue&&loop!==2&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:C.orange,color:"#FFF",marginLeft:3,fontWeight:700}}>OD</span>}</span>);};
 function OffboardingModule({setToast,go}){
   const [records,setRecords]=useState(OFFBOARDING);
@@ -995,13 +991,13 @@ function OffboardingModule({setToast,go}){
   const stCounts=useMemo(()=>{const c={};records.forEach(o=>{c[o.status]=(c[o.status]||0)+1;});return c;},[records]);
   const filt=useMemo(()=>{let l=records;if(stF!=="all")l=l.filter(o=>o.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(o=>(o.user||"").toLowerCase().includes(s)||(o.sn||"").toLowerCase().includes(s)||(o.loc||"").toLowerCase().includes(s)||(o.taskId||"").toLowerCase().includes(s));}return l;},[records,stF,q]);
   const det=sel?records.find(o=>o.id===sel):null;
-  // ── Workflow dispatcher ────────────────────────────────────────────────────
+  // â”€â”€ Workflow dispatcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // FUTURE INTEGRATION HOOKS:
-  //   "send_label"              → FedEx POST /v1/ship/shipments; store trackingNumber in shipping.return
-  //   "send_followup_*"         → email service / Power Automate; body built from off-label template
-  //   "create_secondary_label"  → FedEx POST with confirmed shipping.address as recipient
-  //   shipping.return.lastMovementAt → polled via FedEx GET /v1/track/{trackingNumber}
-  //   recoveryLoop===2 && isOverdue → SLA breach alert / manager dashboard flag
+  //   "send_label"              â†’ FedEx POST /v1/ship/shipments; store trackingNumber in shipping.return
+  //   "send_followup_*"         â†’ email service / Power Automate; body built from off-label template
+  //   "create_secondary_label"  â†’ FedEx POST with confirmed shipping.address as recipient
+  //   shipping.return.lastMovementAt â†’ polled via FedEx GET /v1/track/{trackingNumber}
+  //   recoveryLoop===2 && isOverdue â†’ SLA breach alert / manager dashboard flag
   const dispatch=(id,action,extra={})=>{
     const now=offNow();
     setRecords(prev=>prev.map(o=>{
@@ -1065,7 +1061,7 @@ function OffboardingModule({setToast,go}){
     if((status==="investigating"||status==="needs_review")&&!userEmailConfirmed)btn("record_email","Record User Email",C.cyan,C.cyanSoft,C.cyanBorder);
     if((status==="investigating"||status==="needs_review")&&!userAddressConfirmed)btn("record_address","Record User Address",C.accent,C.accentSoft,C.accentBorder);
     if(status==="investigating"&&userAddressConfirmed)btn("create_secondary_label","Create Secondary Label",C.purple,C.purpleSoft,C.purpleBorder);
-    // Loop 2 follow-up chain — label_sent and awaiting_movement both valid entry points
+    // Loop 2 follow-up chain â€” label_sent and awaiting_movement both valid entry points
     if((status==="label_sent"||status==="awaiting_movement")&&recoveryLoop===2)btn("send_secondary_followup_1","Send Secondary Follow-Up 1",C.amber,C.amberSoft,C.amberBorder);
     if(status==="secondary_followup_1")btn("send_secondary_followup_2","Send Secondary Follow-Up 2",C.orange,C.orangeSoft,C.orangeBorder);
     // Escalate: available from loop 1 exhaustion, loop 2 exhaustion, investigating, and already-escalated cases
@@ -1096,9 +1092,9 @@ function OffboardingModule({setToast,go}){
     </div>
     {loop2Count>0&&(
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",marginBottom:10,borderRadius:7,background:"rgba(255,93,108,0.08)",border:"1px solid rgba(255,93,108,0.35)",borderLeft:"4px solid "+C.red}}>
-        <span style={{fontSize:16,flexShrink:0}}>{"⚠️"}</span>
+        <span style={{fontSize:16,flexShrink:0}}>{"âš ï¸"}</span>
         <div>
-          <span style={{fontSize:12,fontWeight:700,color:C.red,fontFamily:MN}}>RECOVERY LOOP 2 ACTIVE — </span>
+          <span style={{fontSize:12,fontWeight:700,color:C.red,fontFamily:MN}}>RECOVERY LOOP 2 ACTIVE â€” </span>
           <span style={{fontSize:11.5,color:C.sub}}>{loop2Count} case{loop2Count>1?"s are":" is"} in secondary recovery. {loop2Count>1?"These devices are":"This device is"} overdue. A new label has been issued to a confirmed address. Track follow-up progress carefully.</span>
         </div>
       </div>
@@ -1273,70 +1269,54 @@ function BreakFixModule({setToast,go,onOpenAsset}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RETURN QUEUE MODULE (multi-process) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-const RtnChip=({s})=>{const x=RTN_STAT[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
-const RsnChip=({r})=>{const x=RTN_REASON[r];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}>{x.l}</span>):null;};
-function ReturnQueueModule({setToast,go,onOpenAsset}){
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ RETURN QUEUE MODULE (multi-process) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+function ReturnQueueModule({setToast,go,onOpenAsset,cases=[]}){
   const [sel,setSel]=useState(null);
-  const [rsnF,setRsnF]=useState("all");
   const [stF,setStF]=useState("all");
   const [q,setQ]=useState("");
-  const rsnCounts=useMemo(()=>{const c={};RETURNS.forEach(r=>{c[r.reason]=(c[r.reason]||0)+1;});return c;},[]);
-  const stCounts=useMemo(()=>{const c={};RETURNS.forEach(r=>{c[r.status]=(c[r.status]||0)+1;});return c;},[]);
-  const filt=useMemo(()=>{let l=RETURNS;if(rsnF!=="all")l=l.filter(r=>r.reason===rsnF);if(stF!=="all")l=l.filter(r=>r.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(r=>r.asset.toLowerCase().includes(s)||r.user.toLowerCase().includes(s)||r.sn.toLowerCase().includes(s));}return l;},[rsnF,stF,q]);
-  const det=sel?RETURNS.find(r=>r.id===sel):null;
-  const overdue=RETURNS.filter(r=>r.status==="overdue").length;
-  // Group by reason for summary
-  const grouped=useMemo(()=>Object.entries(RTN_REASON).map(([k,v])=>({key:k,...v,items:RETURNS.filter(r=>r.reason===k)})),[]);
+  const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
+  const stCounts=useMemo(()=>{const c={};refreshReturns.forEach(r=>{c[r.status]=(c[r.status]||0)+1;});return c;},[refreshReturns]);
+  const filt=useMemo(()=>{let l=refreshReturns;if(stF!=="all")l=l.filter(r=>r.status===stF);if(q.trim()){const s=q.toLowerCase();l=l.filter(r=>r.asset.toLowerCase().includes(s)||r.user.toLowerCase().includes(s)||String(r.caseId).toLowerCase().includes(s));}return l;},[refreshReturns,stF,q]);
+  const det=sel?refreshReturns.find(r=>r.id===sel):null;
+  const overdue=refreshReturns.filter(r=>REFRESH_RETURN_PENDING_STATUSES.includes(r.status)&&((daysFromToday(r.appointmentDate)||0)<-10)).length;
   return (<>
     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-      <Kpi label="Total Returns" value={RETURNS.length} sub="Active queue" color={C.accent}/>
+      <Kpi label="Total Refresh Returns" value={refreshReturns.length} sub="Refresh returns only" color={C.accent}/>
       <Kpi label="Overdue" value={overdue} color={C.red} alert={overdue>0}/>
-      <Kpi label="In Transit" value={stCounts.in_transit||0} color={C.orange}/>
-      <Kpi label="Received" value={stCounts.received||0} color={C.green}/>
-      <Kpi label="Staged for LFS" value={stCounts.staged_for_lfs||0} color={C.purple}/>
-      <Kpi label="Closed" value={stCounts.closed||0} color={C.green}/>
-    </div>
-    {/* Reason grouping summary */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
-      {grouped.map(g=>(<div key={g.key} onClick={()=>{setRsnF(rsnF===g.key?"all":g.key);setSel(null);}} style={{background:rsnF===g.key?g.bg:C.surface,border:`1px solid ${rsnF===g.key?g.bd:C.border}`,borderLeft:`3px solid ${g.c}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",boxShadow:C.shadow}}>
-        <div style={{fontSize:10,fontWeight:700,color:g.c,fontFamily:MN,letterSpacing:"0.04em"}}>{g.l}</div>
-        <div style={{fontSize:22,fontWeight:700,color:g.c,marginTop:4}}>{g.items.length}</div>
-        <div style={{fontSize:9,color:C.muted,marginTop:2}}>{g.items.filter(r=>!["closed","shipped_to_vendor"].includes(r.status)).length} active</div>
-      </div>))}
+      <Kpi label="Awaiting Return" value={refreshReturns.filter(r=>REFRESH_RETURN_PENDING_STATUSES.includes(r.status)).length} color={C.orange}/>
+      <Kpi label="Returned" value={refreshReturns.filter(r=>["returned","checked_in"].includes(r.status)).length} color={C.green}/>
+      <Kpi label="Closed" value={refreshReturns.filter(r=>["completed","closed"].includes(r.status)).length} color={C.green}/>
     </div>
     <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{position:"relative",flex:"0 0 200px"}}><span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:12}}>{"\u2315"}</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search asset, user\u2026" style={{width:"100%",padding:"6px 8px 6px 26px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:11.5,color:C.text,outline:"none",background:C.panel,fontFamily:SN}}/></div>
       <div style={{width:1,height:20,background:C.border}}/>
-      {[["all","All",RETURNS.length],...Object.entries(RTN_STAT).map(([k,v])=>[k,v.l,stCounts[k]||0])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
+      {[["all","All",refreshReturns.length],...Object.entries(stCounts).map(([k,n])=>[k,CASE_STATUS[k]?.l||k,n])].filter(([,,n])=>n>0).map(([k,l,n])=>(<button key={k} onClick={()=>{setStF(k);setSel(null);}} style={{padding:"4px 9px",borderRadius:5,border:`1px solid ${stF===k?C.accent:C.border}`,background:stF===k?C.accentSoft:C.surface,color:stF===k?C.accent:C.sub,fontSize:11,fontWeight:500,cursor:"pointer"}}>{l} ({n})</button>))}
     </div>
     <div style={{display:"flex",gap:0,alignItems:"flex-start"}}>
       <div style={{flex:1,background:C.surface,borderRadius:det?"8px 0 0 8px":"8px",border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 400px)"}}>
-        <table style={{width:"100%",minWidth:950}}><thead><tr>{["ID","Asset","Serial","User","Return Reason","Process","Status","Date","Tracking","Ref"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
-          <tbody>{filt.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No returns match.</td></tr>}
+        <table style={{width:"100%",minWidth:900}}><thead><tr>{["ID","Case","Asset","User","Office","Status","Appointment","Return Received","Tracking"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>{filt.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No refresh returns match.</td></tr>}
             {filt.map((r,i)=>(<tr key={r.id} onClick={()=>setSel(sel===r.id?null:r.id)} style={{cursor:"pointer"}}>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.cyan}}>{r.caseId}</td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.asset}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.muted}}>{r.sn}</td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5}}>{r.user}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><RsnChip r={r.reason}/></td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:10.5,color:C.sub,fontFamily:MN}}>{r.process_type}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><RtnChip s={r.status}/></td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.date}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:getTracking(r)?C.accent:C.light}}>{getTracking(r)||"\u2014"}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:C.cyan}}>{r.ref||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub}}>{r.office}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CSChip s={r.status}/></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.appointmentDate||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.returnDate||"\u2014"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===r.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10,color:r.tracking?C.accent:C.light}}>{r.tracking||"\u2014"}</td>
             </tr>))}</tbody>
         </table>
       </div>
       {det&&(<div style={{width:370,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 400px)"}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user}</div><div style={{marginTop:5,display:"flex",gap:5}}><RsnChip r={det.reason}/><RtnChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user}</div><div style={{marginTop:5,display:"flex",gap:5}}><CSChip s={det.status}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:5,flexWrap:"wrap"}}>
-          {det.status==="label_sent"&&<button onClick={()=>setToast(`Reminder sent for ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Send Reminder</button>}
-          {det.status==="overdue"&&<button onClick={()=>setToast(`Escalated ${det.id}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Escalate</button>}
-          {["received","inspecting"].includes(det.status)&&<button onClick={()=>setToast(`${det.id} staged for LFS`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Stage for LFS</button>}
+          {REFRESH_RETURN_PENDING_STATUSES.includes(det.status)&&<button onClick={()=>setToast(`Reminder sent for ${det.caseId}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Send Reminder</button>}
+          {REFRESH_RETURN_PENDING_STATUSES.includes(det.status)&&<button onClick={()=>setToast(`Escalated ${det.caseId}`)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Escalate</button>}
           <button onClick={()=>{if(onOpenAsset&&det.asset)onOpenAsset(det.asset);else if(go){go("registry");setToast(`Opening ${det.asset}`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>View Asset</button>
         </div>
-        <div style={{padding:"10px 18px"}}>{[["Return ID",det.id],["Asset Tag",det.asset],["Serial",det.sn],["Model",det.model],["User",det.user],["Return Reason",RTN_REASON[det.reason]?.l||det.reason],["Process Type",det.process_type],["Status",RTN_STAT[det.status]?.l||det.status],["Technician",det.tech||"\u2014"],["Date",det.date],["Tracking",getTracking(det)||"\u2014"],["Ship Address",getShipAddress(det)||"\u2014"],["Reference",det.ref||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Return ID","Asset Tag","Serial","Date","Tracking","Reference"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="Reference"?C.cyan:C.text,maxWidth:180,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
+        <div style={{padding:"10px 18px"}}>{[["Return ID",det.id],["Case",det.caseId],["Asset Tag",det.asset],["User",det.user],["Office",det.office],["Status",CASE_STATUS[det.status]?.l||det.status],["Technician",det.tech||"\u2014"],["Appointment",det.appointmentDate||"\u2014"],["Return Received",det.returnDate||"\u2014"],["Tracking",det.tracking||"\u2014"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Return ID","Case","Asset Tag","Appointment","Return Received","Tracking"].includes(l)?MN:SN,color:v==="\u2014"?C.light:l==="Case"?C.cyan:C.text,maxWidth:180,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
         {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:11.5,color:C.sub,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{det.notes}</div></div>}
       </div>)}
     </div>
@@ -1352,11 +1332,11 @@ const Toast=({msg,onClose})=>{useEffect(()=>{const t=setTimeout(onClose,3000);re
 // Form field helper
 const FF=({label,children,w})=>(<div style={{flex:w?`0 0 ${w}`:"1 1 200px"}}><div style={{fontSize:10,fontWeight:600,color:C.muted,marginBottom:4,fontFamily:MN,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</div>{children}</div>);
 const inp={width:"100%",padding:"7px 10px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:12,color:C.text,outline:"none",background:C.surface,fontFamily:SN};
-const parseAssetAgeMonths=(age)=>{if(!age||age==="—")return 0;const y=(age.match(/(\d+)\s*yr/)||[])[1];const mo=(age.match(/(\d+)\s*mo/)||[])[1];if(y||mo)return (Number(y)||0)*12+(Number(mo)||0);const num=Number.parseFloat(age);return Number.isFinite(num)?Math.round(num*12):0;};
+const parseAssetAgeMonths=(age)=>{if(!age||age==="â€”")return 0;const y=(age.match(/(\d+)\s*yr/)||[])[1];const mo=(age.match(/(\d+)\s*mo/)||[])[1];if(y||mo)return (Number(y)||0)*12+(Number(mo)||0);const num=Number.parseFloat(age);return Number.isFinite(num)?Math.round(num*12):0;};
 const toLocalISODate=(d=new Date())=>{const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10);};
 const currentYear=()=>toLocalISODate().slice(0,4);
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ INVENTORY + BOOKINGS VIEW Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ INVENTORY + BOOKINGS VIEW ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 function InventoryModule({setToast,currentNav,assets=[]}){
   const [tab,setTab]=useState(currentNav==="inventory.bookings"?"bookings":"stock"); // stock | bookings | newBooking
   // Sync internal tab when sidebar nav changes
@@ -1461,7 +1441,7 @@ function InventoryModule({setToast,currentNav,assets=[]}){
       <button onClick={()=>{setTab("newBooking");setSel(null);setBkSel(null);}} style={{padding:"6px 14px",borderRadius:6,border:"none",background:tab==="newBooking"?C.accent:C.green,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ New Booking</button>
     </div>
 
-    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â STOCK TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â STOCK TAB ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */}
     {tab==="stock"&&(<>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         <Kpi label="Total SKUs" value={displayInvItems.length} color={C.accent}/>
@@ -1499,7 +1479,7 @@ function InventoryModule({setToast,currentNav,assets=[]}){
       </div>
     </>)}
 
-    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â BOOKINGS TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â BOOKINGS TAB ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */}
     {tab==="bookings"&&(<>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         <Kpi label="Total Bookings" value={bookings.length} color={C.accent}/>
@@ -1569,7 +1549,7 @@ function InventoryModule({setToast,currentNav,assets=[]}){
       </div>
     </>)}
 
-    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â NEW BOOKING FORM Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+    {/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â NEW BOOKING FORM ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */}
     {tab==="newBooking"&&(<div style={{maxWidth:800}}>
       <div style={{background:C.surface,borderRadius:10,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}>
         <div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{fontSize:14,fontWeight:700}}>New Inventory Booking Request</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>Reserve inventory items for a refresh case or incident.</div></div>
@@ -1613,22 +1593,34 @@ function InventoryModule({setToast,currentNav,assets=[]}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ OTHER VIEWS (compact) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function CommandView({go,cases}){const kp=useMemo(()=>({pen:cases.filter(c=>c.status==="pending_contact").length,sch:cases.filter(c=>c.status==="scheduled").length,rp:cases.filter(c=>c.status==="return_pending").length,ci:cases.filter(c=>c.status==="checked_in").length}),[cases]);return (<><div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Kpi label="Total Cases" value={cases.length} color={C.accent}/><Kpi label="Pending Contact" value={kp.pen} color={C.gray} onClick={()=>go("refresh.queue")}/><Kpi label="Scheduled" value={kp.sch} color={C.cyan}/><Kpi label="Returns" value={kp.rp} color={C.red} alert onClick={()=>go("returns")}/><Kpi label="Checked In" value={kp.ci} color={C.green}/></div><SH color={C.cyan} badge={`${TECHS.length} techs`}>Technician Workload</SH><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:8}}>{TECHS.map(t=>{const a=cases.filter(c=>c.tech===t.name).filter(c=>!["closed","checked_in"].includes(c.status));return (<div key={t.id} onClick={()=>go("refresh.techs")} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,cursor:"pointer"}}><div style={{fontSize:12.5,fontWeight:600}}>{t.name}</div><div style={{fontSize:9.5,color:C.muted,marginBottom:6}}>{t.role} {"\u00B7"} {t.home}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",textAlign:"center"}}>{[{l:"Active",v:a.length,c:C.amber},{l:"Done",v:cases.filter(c=>c.tech===t.name&&["deploy_complete","closed"].includes(c.status)).length,c:C.green},{l:"Avg",v:t.avg+"m",c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:16,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontSize:8,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</div></>);}
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ OTHER VIEWS (compact) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+function CommandView({go,cases}){
+  const refreshCases=useMemo(()=>getRefreshCases(cases),[cases]);
+  const openRefreshCases=useMemo(()=>getOpenRefreshCases(cases),[cases]);
+  const appointmentWorkload=useMemo(()=>getRefreshAppointmentWorkload(cases),[cases]);
+  const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
+  const kp=useMemo(()=>({
+    pen:openRefreshCases.filter(c=>REFRESH_CONTACT_STATUSES.includes(c.status)).length,
+    sch:openRefreshCases.filter(c=>REFRESH_SCHEDULED_STATUSES.includes(c.status)).length,
+    rp:refreshReturns.filter(r=>REFRESH_RETURN_PENDING_STATUSES.includes(r.status)).length,
+    ci:refreshReturns.filter(r=>REFRESH_RETURN_COMPLETE_STATUSES.includes(r.status)).length,
+  }),[openRefreshCases,refreshReturns]);
+  return (<><div style={{display:"flex",gap:7,marginBottom:14,flexWrap:"wrap"}}><Kpi label="Total Cases" value={openRefreshCases.length} color={C.accent}/><Kpi label="Pending Contact" value={kp.pen} color={C.gray} onClick={()=>go("refresh.queue")}/><Kpi label="Scheduled" value={kp.sch} color={C.cyan}/><Kpi label="Returns" value={kp.rp} color={C.red} alert onClick={()=>go("returns")}/><Kpi label="Checked In" value={kp.ci} color={C.green}/></div><SH color={C.cyan} badge={`${TECHS.length} techs`}>Technician Workload</SH><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:8}}>{TECHS.map(t=>{const a=appointmentWorkload.filter(c=>c.tech===t.name);return (<div key={t.id} onClick={()=>go("refresh.techs")} style={{background:C.surface,borderRadius:7,padding:"12px 14px",border:`1px solid ${C.border}`,boxShadow:C.shadow,cursor:"pointer"}}><div style={{fontSize:12.5,fontWeight:600}}>{t.name}</div><div style={{fontSize:9.5,color:C.muted,marginBottom:6}}>{t.role} {"\u00B7"} {t.home}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",textAlign:"center"}}>{[{l:"Active",v:a.length,c:C.amber},{l:"Done",v:refreshCases.filter(c=>c.tech===t.name&&REFRESH_RETURN_COMPLETE_STATUSES.includes(c.status)).length,c:C.green},{l:"Avg",v:t.avg+"m",c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:16,fontWeight:700,color:m.c}}>{m.v}</div><div style={{fontSize:8,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</div></>);}
 function QueueView({go,cases,onOpenCase,onOpenAsset}){
   const actionBtn={padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"};
-  const caseIdSet=useMemo(()=>new Set(cases.map(cs=>cs.id).filter(Boolean)),[cases]);
-  const hasReturnAction=(row)=>["return_pending","checked_in"].includes(row.status);
-  return (<div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 230px)"}}><table style={{width:"100%",minWidth:920}}><thead><tr>{["Case","Asset","User","Office","Status","Urgency","Days","Tech","Scheduled","Actions"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead><tbody>{cases.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No refresh cases are currently in queue.</td></tr>}{cases.map((r,ri)=>{const rowBg=ri%2===0?C.surface:C.surfaceAlt;const hasCaseTarget=Boolean(r.id)&&caseIdSet.has(r.id);const hasAssetTarget=Boolean(r.at&&r.at!=="\u2014");const showReturn=hasReturnAction(r);return (<tr key={r.id}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.accent}}>{r.at}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:12,fontWeight:500}}>{r.user}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:C.sub}}>{r.office}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><RfChip s={r.status}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontSize:10,padding:"1px 5px",borderRadius:3,background:(r.urg==="HIGH"?C.red:C.amber)+"12",color:r.urg==="HIGH"?C.red:C.amber,fontWeight:700,fontFamily:MN}}>{r.urg}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,fontWeight:700,color:r.dte<=90?C.red:C.sub}}>{r.dte}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:r.tech?C.sub:C.light}}>{r.tech||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.sd||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{hasCaseTarget&&<button onClick={()=>{if(onOpenCase)onOpenCase(r.id);else if(go)go("cases.all");}} style={{...actionBtn,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent}}>Case</button>}{hasAssetTarget&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(r.at);else if(go)go("registry");}} style={{...actionBtn,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple}}>Asset</button>}{showReturn&&<button onClick={()=>{if(go)go("returns");}} style={{...actionBtn,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red}}>Return</button>}</div></td></tr>);})}</tbody></table></div>);
+  const rows=useMemo(()=>getOpenRefreshOperationalRows(cases),[cases]);
+  const caseIdSet=useMemo(()=>new Set(rows.map(cs=>cs.id).filter(Boolean)),[rows]);
+  const hasReturnAction=(row)=>REFRESH_RETURN_ACTIVE_STATUSES.includes(row.status)||REFRESH_COMPLETED_STATUSES.includes(row.status);
+  return (<div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 230px)"}}><table style={{width:"100%",minWidth:920}}><thead><tr>{["Case","Asset","User","Office","Status","Priority","Days","Tech","Scheduled","Actions"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead><tbody>{rows.length===0&&<tr><td colSpan={10} style={{padding:28,textAlign:"center",color:C.muted}}>No refresh cases are currently in queue.</td></tr>}{rows.map((r,ri)=>{const rowBg=ri%2===0?C.surface:C.surfaceAlt;const hasCaseTarget=Boolean(r.id)&&caseIdSet.has(r.id);const hasAssetTarget=Boolean(r.asset&&r.asset!=="\u2014");const showReturn=hasReturnAction(r);return (<tr key={r.id}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{r.id}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.accent}}>{r.asset}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:12,fontWeight:500}}>{r.user}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:C.sub}}>{r.office}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><CSChip s={r.status}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><span style={{fontSize:10,padding:"1px 5px",borderRadius:3,background:(r.priority==="HIGH"?C.red:C.amber)+"12",color:r.priority==="HIGH"?C.red:C.amber,fontWeight:700,fontFamily:MN}}>{r.priority}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,fontWeight:700,color:r.dte!==null&&r.dte<=0?C.red:C.sub}}>{r.dte==null?"\u2014":r.dte}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontSize:11,color:r.tech?C.sub:C.light}}>{r.tech||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg,fontFamily:MN,fontSize:10.5,color:C.sub}}>{r.scheduled||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:rowBg}}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{hasCaseTarget&&<button onClick={()=>{if(onOpenCase)onOpenCase(r.id);else if(go)go("cases.all");}} style={{...actionBtn,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent}}>Case</button>}{hasAssetTarget&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(r.asset);else if(go)go("registry");}} style={{...actionBtn,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple}}>Asset</button>}{showReturn&&<button onClick={()=>{if(go)go("returns");}} style={{...actionBtn,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red}}>Return</button>}</div></td></tr>);})}</tbody></table></div>);
 }
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ASSET REGISTRY MODULE (System of Record) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ASSET REGISTRY MODULE (System of Record) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const REG_ST={assigned:{l:"Assigned",c:C.green,bg:C.greenSoft,bd:C.greenBorder},inventory:{l:"In Stock",c:C.cyan,bg:C.cyanSoft,bd:C.cyanBorder},reserved:{l:"Reserved",c:C.purple,bg:C.purpleSoft,bd:C.purpleBorder},pending_refresh:{l:"Pending Refresh",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},refresh_scheduled:{l:"Refresh Scheduled",c:C.orange,bg:C.orangeSoft,bd:C.orangeBorder},pending_return:{l:"Pending Return",c:C.red,bg:C.redSoft,bd:C.redBorder},in_transit:{l:"In Transit",c:C.accent,bg:C.accentSoft,bd:C.accentBorder},repair:{l:"In Repair",c:C.red,bg:C.redSoft,bd:C.redBorder},retired:{l:"Retired",c:C.gray,bg:C.graySoft,bd:C.grayBorder},raw_unknown_status:{l:"Unknown (blocked)",c:C.amber,bg:C.amberSoft,bd:C.amberBorder}};
 const REG_WAR={active:{l:"Active",c:C.green,bg:C.greenSoft},expiring:{l:"Exp. <90d",c:C.amber,bg:C.amberSoft},expired:{l:"Expired",c:C.red,bg:C.redSoft}};
 const RStChip=({s})=>{const x=REG_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",borderRadius:5,fontSize:11,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,whiteSpace:"nowrap"}}><span style={{width:6,height:6,borderRadius:"50%",background:x.c,flexShrink:0}}/>{x.l}</span>):(<span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>);};
 const RWChip=({s})=>{const x=REG_WAR[s];return x?(<span style={{padding:"2px 7px",borderRadius:4,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg}}>{x.l}</span>):(<span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>);};
 const RCDot=({v})=>{if(!v||v==="\u2014")return <span style={{fontFamily:MN,fontSize:11,color:C.muted}}>{"\u2014"}</span>;const cl=v==="Compliant"?C.green:v==="Non-compliant"?C.red:C.muted;return (<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:cl}}><span style={{width:7,height:7,borderRadius:"50%",background:cl}}/>{v}</span>);};
 
-// â”€â”€â”€ SEED ASSET REGISTRY (default sample — replaced when AMS import is promoted) â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SEED ASSET REGISTRY (default sample â€” replaced when AMS import is promoted) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const SEED_REG_ASSETS=[
   {id:"a1",tag:"LT-4821",sn:"0F34BPW24223GT",model:"Dell Latitude 5540",cat:"Laptop",status:"assigned",user:"Jonathan Dinh",dept:"IT",office:"Charlotte",pd:"2024-11-15",we:"2027-11-15",ws:"active",le:"2027-11-15",age:"4 mo",cost:1347,cc:"IT-OPS-2025",vendor:"Dell Technologies",intune:"Compliant",seen:"2025-03-05",cond:"Good",rf:false,po:"PO-2025-0142",notes:"Deployed Q4 2024 refresh.",hist:[{d:"2025-03-05",e:"Intune check-in",b:"System"},{d:"2024-11-18",e:"Assigned to Jonathan Dinh",b:"Micah Harris"},{d:"2024-11-15",e:"Received at Charlotte warehouse",b:"Anthony Cousin"},{d:"2024-11-01",e:"Asset created from PO-2025-0142",b:"System"}]},
   {id:"a2",tag:"LT-3297",sn:"PF4KHRS1",model:"Lenovo ThinkPad T14s Gen 4",cat:"Laptop",status:"assigned",user:"Priya Sharma",dept:"Finance",office:"New York HQ",pd:"2022-06-10",we:"2025-06-10",ws:"expiring",le:"2025-06-10",age:"2 yr 9 mo",cost:1289,cc:"FIN-GEN-2022",vendor:"Lenovo",intune:"Compliant",seen:"2025-03-04",cond:"Fair",rf:true,po:"PO-2022-0087",notes:"Warranty expiring June 2025. Flagged."},
@@ -1649,52 +1641,52 @@ const SEED_REG_ASSETS=[
   {id:"a17",tag:"TP-2801",sn:"TP-2801",model:"Lenovo ThinkPad Yoga",cat:"Laptop",status:"pending_return",user:"Sam Vives",dept:"Legal",office:"Charlotte (PTC)",pd:"2021-11-12",we:"2024-11-12",ws:"expired",le:"2024-11-12",age:"3 yr 4 mo",cost:1289,cc:"LEG-GEN-2021",vendor:"Lenovo",intune:"Compliant",seen:"2026-03-03",cond:"Fair",rf:true,po:"PO-2021-0201",notes:"Return case CS-2026-0009. FedEx label sent.",hist:[{d:"2026-03-03",e:"Return label sent",b:"Anthony Cousin"},{d:"2021-11-18",e:"Assigned to Sam Vives",b:"System"}]},
 ];
 
-// ─── NORMALIZED ASSET SCHEMA ───────────────────────────────────────────────
+// â”€â”€â”€ NORMALIZED ASSET SCHEMA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // This is the canonical shape every asset record must conform to, whether it
 // comes from the seed dataset, an AMS CSV import, or a manual entry.
 // Modules must only read fields defined here.
 //
 // Field reference:
-//   id          string  — unique record id (equals tag for AMS imports)
-//   tag         string  — asset tag / AMS AssetsID             (required)
-//   sn          string  — serial number                        (required, fallback to tag)
-//   model       string  — device model                        ("—" if unknown)
-//   cat         string  — category (Laptop, Monitor, Dock…)   ("Laptop" default)
-//   status      string  — normalized lifecycle status key     (see REG_ST)
-//   user        string  — assigned user full name             ("—" if unassigned)
-//   dept        string  — department / cost center team       ("—" if unknown)
-//   office      string  — office / location label             ("—" if unknown)
-//   pd          string  — purchase / deployment date YYYY-MM-DD ("—" if unknown)
-//   we          string  — warranty expiry date YYYY-MM-DD     ("—" if unknown)
-//   ws          string  — warranty status key (active/expiring/expired/"—")
-//   le          string  — lease end date YYYY-MM-DD           ("—" if none)
-//   leaseNum    string  — lease contract number               ("—" if none)
-//   ram         string  — RAM e.g. "32GB"                     ("—" if unknown)
-//   age         string  — human-readable age e.g. "2 yr 4 mo" ("—" if unknown)
-//   cost        number  — unit cost USD                       (0 if unknown)
-//   cc          string  — cost center code                    ("—" if unknown)
-//   vendor      string  — device vendor name                  ("—" if unknown)
-//   po          string  — purchase order number               ("—" if unknown)
-//   intune      string  — Intune compliance ("Compliant"/"Non-compliant"/"—")
-//   seen        string  — last Intune sync date YYYY-MM-DD    ("—" if unknown)
-//   cond        string  — physical condition label            ("—" if unknown)
-//   rf          boolean — refresh eligible flag (derived from we/status)
-//   notes       string  — free-text notes                     ("" if none)
-//   shipAddr    string  — shipping address from AMS           ("" if none)
-//   hist        array   — [{d,e,b}] audit history entries     ([] if none)
-//   reservation object|null — active reservation {type,label,ts} or null
+//   id          string  â€” unique record id (equals tag for AMS imports)
+//   tag         string  â€” asset tag / AMS AssetsID             (required)
+//   sn          string  â€” serial number                        (required, fallback to tag)
+//   model       string  â€” device model                        ("â€”" if unknown)
+//   cat         string  â€” category (Laptop, Monitor, Dockâ€¦)   ("Laptop" default)
+//   status      string  â€” normalized lifecycle status key     (see REG_ST)
+//   user        string  â€” assigned user full name             ("â€”" if unassigned)
+//   dept        string  â€” department / cost center team       ("â€”" if unknown)
+//   office      string  â€” office / location label             ("â€”" if unknown)
+//   pd          string  â€” purchase / deployment date YYYY-MM-DD ("â€”" if unknown)
+//   we          string  â€” warranty expiry date YYYY-MM-DD     ("â€”" if unknown)
+//   ws          string  â€” warranty status key (active/expiring/expired/"â€”")
+//   le          string  â€” lease end date YYYY-MM-DD           ("â€”" if none)
+//   leaseNum    string  â€” lease contract number               ("â€”" if none)
+//   ram         string  â€” RAM e.g. "32GB"                     ("â€”" if unknown)
+//   age         string  â€” human-readable age e.g. "2 yr 4 mo" ("â€”" if unknown)
+//   cost        number  â€” unit cost USD                       (0 if unknown)
+//   cc          string  â€” cost center code                    ("â€”" if unknown)
+//   vendor      string  â€” device vendor name                  ("â€”" if unknown)
+//   po          string  â€” purchase order number               ("â€”" if unknown)
+//   intune      string  â€” Intune compliance ("Compliant"/"Non-compliant"/"â€”")
+//   seen        string  â€” last Intune sync date YYYY-MM-DD    ("â€”" if unknown)
+//   cond        string  â€” physical condition label            ("â€”" if unknown)
+//   rf          boolean â€” refresh eligible flag (derived from we/status)
+//   notes       string  â€” free-text notes                     ("" if none)
+//   shipAddr    string  â€” shipping address from AMS           ("" if none)
+//   hist        array   â€” [{d,e,b}] audit history entries     ([] if none)
+//   reservation object|null â€” active reservation {type,label,ts} or null
 //   // AMS import internals (strip before display):
-//   _idKey      string  — normalised id for dedup
-//   _snKey      string  — normalised serial for dedup
-//   _sourceSerial string — raw serial before fallback
-//   _rawStatus  string  — raw AMS status string before mapping
-//   _rawWe      string  — raw warranty date string
-//   _rawPd      string  — raw purchase date string
-//   assetsName  string  — AMS AssetsName field (raw)
-//   assetsType  string  — AMS AssetsType field (raw)
-// ──────────────────────────────────────────────────────────────────────────
+//   _idKey      string  â€” normalised id for dedup
+//   _snKey      string  â€” normalised serial for dedup
+//   _sourceSerial string â€” raw serial before fallback
+//   _rawStatus  string  â€” raw AMS status string before mapping
+//   _rawWe      string  â€” raw warranty date string
+//   _rawPd      string  â€” raw purchase date string
+//   assetsName  string  â€” AMS AssetsName field (raw)
+//   assetsType  string  â€” AMS AssetsType field (raw)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// normalizeSeedAsset — ensures a hand-authored seed record has all required
+// normalizeSeedAsset â€” ensures a hand-authored seed record has all required
 // schema fields, applying safe defaults for anything missing.
 // Does NOT mutate the original; returns a new object.
 const FALLBACK="\u2014";
@@ -1727,7 +1719,7 @@ const normalizeSeedAsset=(raw)=>({
   shipAddr:     raw.shipAddr || "",
   hist:         Array.isArray(raw.hist)?raw.hist:[],
   reservation:  raw.reservation||null,
-  // AMS import internals — set to defaults for seed records
+  // AMS import internals â€” set to defaults for seed records
   assetsName:   raw.assetsName  || "",
   assetsType:   raw.assetsType  || "",
   _idKey:       (raw.tag||raw.id||"").trim().toUpperCase(),
@@ -1738,7 +1730,7 @@ const normalizeSeedAsset=(raw)=>({
   _rawPd:       raw.pd||"",
 });
 
-// ─── EXAMPLE MAPPING (AMS export row → normalized asset) ──────────────────
+// â”€â”€â”€ EXAMPLE MAPPING (AMS export row â†’ normalized asset) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Raw AMS CSV row (headers + values):
 //   AssetsID: "0F3C3TK24023GT"
 //   AssetsName: "0F3C3TK24023GT"
@@ -1760,21 +1752,21 @@ const normalizeSeedAsset=(raw)=>({
 //   {
 //     id: "0F3C3TK24023GT", tag: "0F3C3TK24023GT", sn: "0F3C3TK24023GT",
 //     model: "Surface Laptop 6", cat: "Laptop", status: "assigned",
-//     user: "Diana Kuessner", dept: "—",
+//     user: "Diana Kuessner", dept: "â€”",
 //     office: "Hunt Valley- MD (HVL)",
 //     pd: "2024-08-05", we: "2028-06-30", ws: "active", le: "2028-06-30",
 //     leaseNum: "908-0023039-000", ram: "32GB",
-//     age: "—", cost: 0, cc: "—", vendor: "Microsoft",
-//     intune: "—", seen: "—", cond: "—",
-//     rf: false, po: "—",
+//     age: "â€”", cost: 0, cc: "â€”", vendor: "Microsoft",
+//     intune: "â€”", seen: "â€”", cond: "â€”",
+//     rf: false, po: "â€”",
 //     notes: "777798775819 / 791488383041",
 //     shipAddr: "11350 McCormick Rd...",
 //     hist: [], reservation: null,
 //     _rawStatus: "Assigned", _sourceSerial: "0F3C3TK24023GT", ...
 //   }
-// ──────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Backward-compatible alias — Exec/Ops/Alerts modules still read this.
+// Backward-compatible alias â€” Exec/Ops/Alerts modules still read this.
 // AssetRegistryModule uses the stateful `assets` prop instead.
 let REG_ASSETS=SEED_REG_ASSETS;
 
@@ -1789,7 +1781,7 @@ function regCell(a,k){
     case "model":return <span style={{fontSize:12.5,fontWeight:500}}>{a.model}</span>;
     case "cat":return <span style={{fontSize:12,color:C.sub}}>{a.cat}</span>;
     case "status":return <RStChip s={a.status}/>;
-    case "user":return a.user==="\u2014"?<span style={{color:C.muted}}>{"\u2014"}</span>:<span style={{fontSize:12.5,fontWeight:500,color:a.user.startsWith("\u2192")?C.purple:C.text}}>{a.user||"—"}</span>;
+    case "user":return a.user==="\u2014"?<span style={{color:C.muted}}>{"\u2014"}</span>:<span style={{fontSize:12.5,fontWeight:500,color:a.user.startsWith("\u2192")?C.purple:C.text}}>{a.user||"â€”"}</span>;
     case "dept":return <span style={{fontSize:12,color:C.sub}}>{a.dept}</span>;
     case "office":return <span style={{fontSize:12,color:C.sub}}>{a.office}</span>;
     case "age":{const ageMonths=parseAssetAgeMonths(a.age);return <span style={{fontFamily:MN,fontSize:11.5,color:ageMonths>=36?C.red:C.sub}}>{a.age}</span>;}
@@ -1823,7 +1815,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
   const PAGE_SIZE=100;
   const assetByTag=useMemo(()=>new Map(assets.map(a=>[a.tag,a])),[assets]);
   const assetIndexById=useMemo(()=>new Map(assets.map((a,idx)=>[a.id,idx])),[assets]);
-  // Debounce search input — avoids re-filtering 11k rows on every keystroke
+  // Debounce search input â€” avoids re-filtering 11k rows on every keystroke
   const [debouncedQ,setDebouncedQ]=useState("");
   useEffect(()=>{const t=setTimeout(()=>setDebouncedQ(q),200);return()=>clearTimeout(t);},[q]);
   // Typeahead suggestion state
@@ -1836,7 +1828,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
     document.addEventListener("mousedown",handler);
     return()=>document.removeEventListener("mousedown",handler);
   },[]);
-  // Ranked suggestion computation — only when q >= 2 chars, capped at 8
+  // Ranked suggestion computation â€” only when q >= 2 chars, capped at 8
   // Priority: exact tag > tag startsWith > serial startsWith > model contains > user contains > office contains > dept contains
   const suggestions=useMemo(()=>{
     const raw=q.trim();
@@ -1940,7 +1932,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
     if(!user){setToast("Assigned user is required.");return;}
     const office=assignmentDraft.office.trim()||"\u2014";
     const dept=assignmentDraft.dept.trim()||"\u2014";
-    const entries=[createAssetActivityEntry({asset:det.tag,label:"Marked Assigned",detail:`${user}${office!=="\u2014"?` · ${office}`:""}`})];
+    const entries=[createAssetActivityEntry({asset:det.tag,label:"Marked Assigned",detail:`${user}${office!=="\u2014"?` Â· ${office}`:""}`})];
     if(user!==(det.user||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Assigned user changed",detail:`${det.user||"\u2014"} \u2192 ${user}`}));
     if(office!==(det.office||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Office updated",detail:`${det.office||"\u2014"} \u2192 ${office}`}));
     if(dept!==(det.dept||""))entries.push(createAssetActivityEntry({asset:det.tag,label:"Department updated",detail:`${det.dept||"\u2014"} \u2192 ${dept}`}));
@@ -2033,7 +2025,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
             })}
             <div style={{padding:"4px 10px",borderTop:`1px solid ${C.borderLight}`,fontSize:9.5,color:C.muted,fontFamily:MN,display:"flex",justifyContent:"space-between"}}>
               <span>{suggestions.length} match{suggestions.length!==1?"es":""}</span>
-              <span>↑↓ navigate · Enter select · Esc close</span>
+              <span>â†‘â†“ navigate Â· Enter select Â· Esc close</span>
             </div>
           </div>
         )}
@@ -2064,10 +2056,10 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
           <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>CREATE CASE</div>
           {false&&<>
-          {det.status==="assigned"&&<><button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh for ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†»"} Create Refresh Case</button><button onClick={()=>{setCasePrefill({type:"offboarding",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Offboarding: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"âž–"} Create Offboard Case</button><button onClick={()=>{setCasePrefill({type:"return_case",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Return: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†©"} Create Return Case</button></>}
+          {det.status==="assigned"&&<><button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh for ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"Ã¢â€ Â»"} Create Refresh Case</button><button onClick={()=>{setCasePrefill({type:"offboarding",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Offboarding: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.redBorder}`,background:C.redSoft,color:C.red,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"Ã¢Å¾â€“"} Create Offboard Case</button><button onClick={()=>{setCasePrefill({type:"return_case",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Return: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.amberBorder}`,background:C.amberSoft,color:C.amber,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"Ã¢â€ Â©"} Create Return Case</button></>}
           {det.status==="repair"&&<button onClick={()=>{setCasePrefill({type:"break_fix",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Break-Fix: ${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.orangeBorder}`,background:C.orangeSoft,color:C.orange,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"\u2692"} Create Break-Fix Case</button>}
-          {["pending_refresh","refresh_scheduled"].includes(det.status)&&<button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh: ${det.model} (${det.tag}). Status: ${det.status}`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"â†»"} Create Refresh Case</button>}
-          <button onClick={()=>{setCasePrefill({type:"break_fix",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>{"â˜·"} New Case</button>
+          {["pending_refresh","refresh_scheduled"].includes(det.status)&&<button onClick={()=>{setCasePrefill({type:"refresh",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`Refresh: ${det.model} (${det.tag}). Status: ${det.status}`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{"Ã¢â€ Â»"} Create Refresh Case</button>}
+          <button onClick={()=>{setCasePrefill({type:"break_fix",assetId:det.tag,userId:det.user==="\u2014"?"":det.user,locationId:det.office,notes:`${det.model} (${det.tag})`});go("cases.create");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>{"Ã¢ËœÂ·"} New Case</button>
           </>}
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {caseCreateActions.map(action=>{
@@ -2108,7 +2100,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
         </div>
         <div style={{padding:"10px 18px"}}>{[["Asset Tag",det.tag],["Serial",det.sn],["Model",det.model],["Category",det.cat],["Assigned User",det.user],["Department",det.dept],["Office",det.office],["Reservation",det.reservation?.label||"\u2014"],["Purchase Date",det.pd],["Age",det.age],["Warranty Exp.",det.we],["Lease End",det.le],["Condition",det.cond],["Cost","$"+det.cost.toLocaleString()],["Cost Center",det.cc],["Vendor",det.vendor],["PO Number",det.po],["Compliance",det.intune],["Last Seen",det.seen],["Refresh Eligible",det.rf?"Yes":"No"]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11.5,color:C.muted}}>{l}</span><span style={{fontSize:11.5,color:v==="\u2014"?C.light:C.text,fontWeight:500,fontFamily:["Asset Tag","Serial","PO Number","Cost Center","Cost","Last Seen","Purchase Date","Warranty Exp.","Lease End","Age"].includes(l)?MN:SN,textAlign:"right",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>))}</div>
         {det.notes&&<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>NOTES</div><div style={{fontSize:12,color:C.sub,lineHeight:1.5}}>{det.notes}</div></div>}
-        {/* â”€â”€ LINKED CASES (bidirectional) â”€â”€ */}
+        {/* Ã¢â€â‚¬Ã¢â€â‚¬ LINKED CASES (bidirectional) Ã¢â€â‚¬Ã¢â€â‚¬ */}
         {linkedCases.length>0&&(()=>{const openLinked=linkedCases.filter(cs=>!CLOSED_CASE_STATUSES.includes(cs.status));return (<div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}><div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:6}}>LINKED CASES ({linkedCases.length})</div><div style={{fontSize:10.5,color:C.sub,marginBottom:6}}>Active linked cases: <strong style={{color:C.text}}>{openLinked.length}</strong></div>{linkedCases.map(cs=>(<div key={cs.id} onClick={()=>{if(onOpenCase){onOpenCase(cs.id);}else{go("cases.all");}setToast(`Opening ${cs.id}`);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}}><div><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{cs.id}</span><span style={{fontSize:10,color:C.muted,marginLeft:6}}>{CASE_TYPES[cs.type]?.l}</span></div><CSChip s={cs.status}/></div>))}</div>);})()}
         <div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`}}>
           <div style={{fontSize:10,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>ASSET ACTIVITY ({assetTimeline.length})</div>
@@ -2120,7 +2112,7 @@ function AssetRegistryModule({setToast,assets,cases,setCasePrefill,onOpenCase,go
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WAVE PLANNER MODULE (from 2026_Refresh_Plan_Enhanced_v4.xlsx) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ WAVE PLANNER MODULE (from 2026_Refresh_Plan_Enhanced_v4.xlsx) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const WAVES=[
   {id:"W-PTC",ofc:"Charlotte, NC (PTC)",code:"PTC",method:"IT Asset Team",q1:7,q2:48,q3:87,q4:64,gb16:32,total:238,q3v:"Rolling",q4v:"Rolling",contacted:37,status:"active",tech:"Micah Harris / Anthony Cousin",risk:null},
   {id:"W-ATL",ofc:"Atlanta, GA (ATL)",code:"ATL",method:"Combined Visit",q1:2,q2:10,q3:102,q4:45,gb16:24,total:183,q3v:"May 1, 2026",q4v:"Sep 1, 2026",contacted:9,status:"planning",tech:"Micah Harris",risk:"Largest travel wave \u2014 126 Q3 users need single trip"},
@@ -2260,8 +2252,8 @@ function WavePlannerModule({setToast,go,cases=SEED_CASES}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PROCUREMENT MODULE (from SHI_Sales_Jan_-_Feb.xlsx — line-level) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// POs grouped from 978 SHI Sell Thru Detail lines. Status: INVOICEDÃ¢â€ â€™received, OPEN ORDERÃ¢â€ â€™open, RETURNEDÃ¢â€ â€™returned
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ PROCUREMENT MODULE (from SHI_Sales_Jan_-_Feb.xlsx â€” line-level) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+// POs grouped from 978 SHI Sell Thru Detail lines. Status: INVOICEDÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢received, OPEN ORDERÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢open, RETURNEDÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢returned
 const PO_ST={open:{l:"Open",c:C.amber,bg:C.amberSoft,bd:C.amberBorder},received:{l:"Received",c:C.green,bg:C.greenSoft,bd:C.greenBorder},returned:{l:"Returned",c:C.red,bg:C.redSoft,bd:C.redBorder}};
 const PoChip=({s})=>{const x=PO_ST[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):null;};
 
@@ -2392,7 +2384,7 @@ function ProcurementModule({setToast,go}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AUDIT MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ AUDIT MODULE ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const AUD_TYPE={status_change:{l:"Status Change",c:C.amber,bg:C.amberSoft},assignment:{l:"Assignment",c:C.green,bg:C.greenSoft},unassignment:{l:"Unassignment",c:C.red,bg:C.redSoft},reservation:{l:"Reservation",c:C.purple,bg:C.purpleSoft},provisioning:{l:"Provisioning",c:C.orange,bg:C.orangeSoft},shipment:{l:"Shipment",c:C.accent,bg:C.accentSoft},return_received:{l:"Return Received",c:C.cyan,bg:C.cyanSoft},lease_return:{l:"Lease Return",c:C.gray,bg:C.graySoft},retirement:{l:"Retirement",c:C.gray,bg:C.graySoft},refresh_created:{l:"Refresh Created",c:C.amber,bg:C.amberSoft},compliance:{l:"Compliance",c:C.red,bg:C.redSoft},created:{l:"Asset Created",c:C.green,bg:C.greenSoft},onboarding:{l:"Onboarding",c:C.green,bg:C.greenSoft},offboarding:{l:"Offboarding",c:C.red,bg:C.redSoft},break_fix:{l:"Break-Fix",c:C.orange,bg:C.orangeSoft}};
 const AUD_SRC={ams:{l:"AMS",c:C.accent},sharepoint:{l:"SharePoint",c:C.purple},excel:{l:"Excel",c:C.green},fedex:{l:"FedEx",c:C.orange},servicenow:{l:"ServiceNow",c:C.cyan},intune:{l:"Intune",c:C.amber},itam:{l:"ITAM Platform",c:C.text},system:{l:"System",c:C.gray}};
 const EvTyp=({t})=>{const x=AUD_TYPE[t];return x?(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:x.c,background:x.bg,fontFamily:MN,whiteSpace:"nowrap"}}>{x.l}</span>):(<span style={{fontSize:10,color:C.muted}}>{t}</span>);};
@@ -2479,8 +2471,8 @@ function AuditModule({setToast,go,onOpenAsset,auditEvents=AUDIT_EVENTS}){
           <tbody>{filt.length===0&&<tr><td colSpan={7} style={{padding:28,textAlign:"center",color:C.muted}}>No audit events match.</td></tr>}
             {filt.map((ev,ri)=>(<tr key={ev.id} onClick={()=>setSel(sel===ev.id?null:ev.id)} style={{cursor:"pointer"}}>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{ev.ts}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{ev.asset||"—"}</span></td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{ev.user||"—"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{ev.asset||"â€”"}</span></td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{ev.user||"â€”"}</td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><EvTyp t={ev.type}/></td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt}}><SrcBdg s={ev.src}/></td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===ev.id?C.accentSoft:ri%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{ev.by}</td>
@@ -2490,7 +2482,7 @@ function AuditModule({setToast,go,onOpenAsset,auditEvents=AUDIT_EVENTS}){
       </div>
       {det&&(<div style={{width:390,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 340px)"}}>
         <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.asset||"—"}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user||"—"}</div><div style={{marginTop:5,display:"flex",gap:5}}><EvTyp t={det.type}/><SrcBdg s={det.src}/></div></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.asset||"â€”"}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.user||"â€”"}</div><div style={{marginTop:5,display:"flex",gap:5}}><EvTyp t={det.type}/><SrcBdg s={det.src}/></div></div>
             <button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button>
           </div>
         </div>
@@ -2499,11 +2491,11 @@ function AuditModule({setToast,go,onOpenAsset,auditEvents=AUDIT_EVENTS}){
           <button onClick={()=>{if(go)go("refresh.queue");setToast("Opening Refresh Queue");}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>View Refresh Cases</button>
         </div>
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
-          {[["Event ID",det.id],["Timestamp",det.ts],["Asset Tag",det.asset||"—"],["User",det.user||"—"],["Event Type",AUD_TYPE[det.type]?.l||det.type],["Source System",AUD_SRC[det.src]?.l||det.src],["Performed By",det.by]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Event ID","Timestamp","Asset Tag"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}
+          {[["Event ID",det.id],["Timestamp",det.ts],["Asset Tag",det.asset||"â€”"],["User",det.user||"â€”"],["Event Type",AUD_TYPE[det.type]?.l||det.type],["Source System",AUD_SRC[det.src]?.l||det.src],["Performed By",det.by]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["Event ID","Timestamp","Asset Tag"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}
         </div>
         <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>EVENT DETAIL</div><div style={{fontSize:12,color:C.sub,lineHeight:1.6}}>{det.detail}</div></div>
         {/* Full asset history timeline */}
-        <div style={{padding:"10px 18px"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>FULL HISTORY FOR {det.asset||"—"} ({assetHist.length} events)</div>
+        <div style={{padding:"10px 18px"}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:8}}>FULL HISTORY FOR {det.asset||"â€”"} ({assetHist.length} events)</div>
           <div style={{position:"relative",paddingLeft:12}}><div style={{position:"absolute",left:3,top:5,bottom:5,width:1.5,background:C.borderLight}}/>
             {assetHist.map((h,i)=>(<div key={h.id} onClick={(e)=>{e.stopPropagation();setSel(h.id);}} style={{position:"relative",marginBottom:10,cursor:"pointer",padding:"2px 4px",borderRadius:4,background:h.id===det.id?C.accentSoft:"transparent"}}>
               <div style={{position:"absolute",left:-9.5,top:3,width:6,height:6,borderRadius:"50%",background:h.id===det.id?C.accent:C.border,border:`1.5px solid ${h.id===det.id?C.accent:C.borderHeavy}`}}/>
@@ -2517,7 +2509,7 @@ function AuditModule({setToast,go,onOpenAsset,auditEvents=AUDIT_EVENTS}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ADMIN MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ADMIN MODULE ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const ADM_MODELS=[
   {id:"M1",name:"Dell Pro 14 Premium PA14250",mfr:"Dell",type:"Laptop",ram:"32GB",storage:"512GB SSD",lifecycle:36,active:true},
   {id:"M2",name:"Dell Pro Max 14 MA14250",mfr:"Dell",type:"Laptop",ram:"64GB",storage:"1TB SSD",lifecycle:36,active:true},
@@ -2598,7 +2590,7 @@ function AdminModule({setToast}){
   </>);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ LIFECYCLE AUTOMATION ENGINE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ LIFECYCLE AUTOMATION ENGINE ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 const AUTO_RULES=[
   {id:"AR-001",name:"Lease Expiry Detection",trigger:"asset.lease_end - today \u2264 90 days",condition:"asset.status = 'Assigned'",action:"Set status \u2192 Lease Expiring \u2192 Create refresh candidate \u2192 Set urgency based on days remaining",schedule:"Nightly 2:00 AM UTC",src:"system",cat:"refresh",active:true,lastRun:"2026-03-06 02:00",execCount:438,lastResult:"success"},
   {id:"AR-002",name:"Warranty Expiry Detection",trigger:"asset.warranty_exp - today \u2264 90 days",condition:"asset.status = 'Assigned' AND no active refresh case",action:"Create refresh candidate \u2192 Set urgency HIGH \u2192 Notify ITAM coordinator",schedule:"Nightly 2:00 AM UTC",src:"system",cat:"refresh",active:true,lastRun:"2026-03-06 02:00",execCount:52,lastResult:"success"},
@@ -2714,7 +2706,7 @@ function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
       <SH color={C.cyan} badge={`${autoLog.length}`}>Recent Events</SH>
       <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:300}}>
         <table style={{width:"100%",minWidth:700}}><thead><tr>{["Time","Rule","Asset","Result","Detail"].map(h=>(<th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
-          <tbody>{autoLog.slice(0,10).map((l,i)=>(<tr key={l.id} onClick={()=>{setTab("log");setLogSel(l.id);}} style={{cursor:"pointer"}}><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{l.ts}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,fontWeight:500}}>{l.name}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"—"}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:250,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail}</td></tr>))}</tbody>
+          <tbody>{autoLog.slice(0,10).map((l,i)=>(<tr key={l.id} onClick={()=>{setTab("log");setLogSel(l.id);}} style={{cursor:"pointer"}}><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{l.ts}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,fontWeight:500}}>{l.name}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"â€”"}</td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></td><td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:250,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail}</td></tr>))}</tbody>
         </table>
       </div>
     </>)}
@@ -2765,8 +2757,8 @@ function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{l.id}</span></td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{l.ts}</td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,fontWeight:500}}>{l.name}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"—"}</td>
-              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{l.user||"—"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.accent}}>{l.asset||"â€”"}</td>
+              <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11.5,color:C.sub}}>{l.user||"â€”"}</td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:l.result==="success"?C.greenSoft:C.amberSoft,color:l.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{l.result}</span></td>
               <td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:logSel===l.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:C.sub,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail}</td>
             </tr>))}</tbody>
@@ -2774,7 +2766,7 @@ function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
         </div>
         {detLog&&(<div style={{width:380,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 280px)"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{detLog.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{detLog.name}</div><div style={{marginTop:5}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:detLog.result==="success"?C.greenSoft:C.amberSoft,color:detLog.result==="success"?C.green:C.amber,fontWeight:600,fontFamily:MN}}>{detLog.result}</span></div></div><button onClick={()=>setLogSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
-          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>{[["ID",detLog.id],["Time",detLog.ts],["Rule",detLog.rule],["Asset",detLog.asset||"—"],["User",detLog.user||"—"],["Result",detLog.result]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["ID","Time","Rule","Asset"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}</div>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>{[["ID",detLog.id],["Time",detLog.ts],["Rule",detLog.rule],["Asset",detLog.asset||"â€”"],["User",detLog.user||"â€”"],["Result",detLog.result]].map(([l,v],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11,fontWeight:500,fontFamily:["ID","Time","Rule","Asset"].includes(l)?MN:SN,color:C.text}}>{v}</span></div>))}</div>
           <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:4}}>DETAIL</div><div style={{fontSize:12,color:C.sub,lineHeight:1.6}}>{detLog.detail}</div></div>
           <div style={{padding:"10px 18px",display:"flex",gap:5}}>
             {detLog.asset&&detLog.asset!=="\u2014"&&detLog.asset!=="(batch)"&&<button onClick={()=>{if(onOpenAsset)onOpenAsset(detLog.asset);else if(go){go("registry");setToast(`Opening ${detLog.asset}`);}}} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>View Asset</button>}
@@ -2788,6 +2780,11 @@ function LifecycleAutomationModule({setToast,go,onAutomationEvent,onOpenAsset}){
 
 function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_CASES,auditEvents=AUDIT_EVENTS}){
   const regAssets=assets;
+  const refreshCases=useMemo(()=>getRefreshCases(cases),[cases]);
+  const openRefreshCases=useMemo(()=>getOpenRefreshCases(cases),[cases]);
+  const refreshRows=useMemo(()=>getRefreshOperationalRows(cases),[cases]);
+  const openRefreshRows=useMemo(()=>getOpenRefreshOperationalRows(cases),[cases]);
+  const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
   const today=useMemo(()=>new Date(toLocalISODate()+"T00:00:00"),[]);
   const mFmt=useMemo(()=>new Intl.DateTimeFormat("en-US",{month:"short"}),[]);
   const parseDate=(s)=>{if(!s||s==="\u2014")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
@@ -2797,9 +2794,9 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
   const parseAgeMonths=(a)=>{if(!a)return 0;const y=(a.match(/(\d+)\s*yr/)||[])[1];const mo=(a.match(/(\d+)\s*mo/)||[])[1];return (Number(y)||0)*12+(Number(mo)||0);};
 
   const regAssigned=useMemo(()=>regAssets.filter(a=>a.status==="assigned"),[regAssets]);
-  const activeRefreshCases=useMemo(()=>cases.filter(c=>!["closed","checked_in"].includes(c.status)),[cases]);
+  const activeRefreshCases=openRefreshRows;
   const leaseWindows=useMemo(()=>{
-    // AMS exports map WarrantyExpiryDate → both we and le. Use we as primary; fall back to le for seed assets.
+    // AMS exports map WarrantyExpiryDate â†’ both we and le. Use we as primary; fall back to le for seed assets.
     const rows=regAssets.map(a=>daysUntil(a.we&&a.we!=="\u2014"?a.we:a.le)).filter(v=>v!==null);
     const inRange=(n)=>rows.filter(d=>d>=0&&d<=n).length;
     return {d30:inRange(30),d60:inRange(60),d90:inRange(90),d180:inRange(180),expired:rows.filter(d=>d<0).length};
@@ -2812,30 +2809,30 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
   const reservedInventory=useMemo(()=>SEED_BK.filter(b=>["submitted","pending_approval","approved"].includes(b.status)).reduce((sum,b)=>sum+b.items.reduce((s,it)=>s+it.qty,0),0),[]);
   const complianceExceptions=useMemo(()=>regAssets.filter(a=>a.intune==="Non-compliant").length,[regAssets]);
   const avgRefreshCycleDays=useMemo(()=>Math.round((TECHS.reduce((a,t)=>a+t.avg,0)/TECHS.length)*0.28*10)/10,[]);
-  const returnsPending=useMemo(()=>cases.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[cases,regAssets]);
+  const returnsPending=useMemo(()=>refreshReturns.filter(row=>REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).length,[refreshReturns]);
 
   const refreshByMonth=useMemo(()=>{
     const map={};
-    cases.filter(c=>c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    refreshRows.filter(row=>row.scheduled).forEach(row=>{const k=monthKey(row.scheduled);if(k)map[k]=(map[k]||0)+1;});
     const keys=Object.keys(map).sort();
     return keys.map(k=>({k,l:monthLabel(k),v:map[k]}));
-  },[cases]);
+  },[refreshRows]);
   const refreshByOffice=useMemo(()=>{
     const map={};
-    cases.forEach(c=>{const officeLabel=(c.office||c.locationId||"Unknown Office");const k=String(officeLabel).split(" (")[0];map[k]=(map[k]||0)+1;});
+    refreshRows.forEach(row=>{const k=String(row.office||"Unknown Office").split(" (")[0];map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({k,v}));
-  },[cases]);
+  },[refreshRows]);
   const stageBreakdown=useMemo(()=>{
     const map={};
-    cases.forEach(c=>{map[c.status]=(map[c.status]||0)+1;});
-    return Object.entries(map).map(([k,v])=>({k,v,l:RF_S[k]?.s||k}));
-  },[cases]);
-  const overdueRefreshes=useMemo(()=>cases.filter(c=>c.dte<=30&&!["closed","checked_in","deploy_complete"].includes(c.status)).length,[cases]);
+    openRefreshCases.forEach(c=>{map[c.status]=(map[c.status]||0)+1;});
+    return Object.entries(map).map(([k,v])=>({k,v,l:CASE_STATUS[k]?.l||RF_S[k]?.s||k}));
+  },[openRefreshCases]);
+  const overdueRefreshes=useMemo(()=>openRefreshRows.filter(row=>row.dte!==null&&row.dte<0).length,[openRefreshRows]);
   const completionTrend=useMemo(()=>{
     const map={};
-    cases.filter(c=>["deploy_complete","checked_in","closed"].includes(c.status)&&c.sd).forEach(c=>{const k=monthKey(c.sd);if(k)map[k]=(map[k]||0)+1;});
+    refreshCases.filter(c=>[...REFRESH_COMPLETED_STATUSES,...REFRESH_RETURN_ACTIVE_STATUSES,...REFRESH_CLOSED_STATUSES].includes(c.status)&&(c.appointmentDate||c.due)).forEach(c=>{const k=monthKey(c.appointmentDate||c.due);if(k)map[k]=(map[k]||0)+1;});
     return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({l:monthLabel(k),v}));
-  },[cases]);
+  },[refreshCases]);
   const returnTrend=useMemo(()=>{
     const map={};
     auditEvents.filter(e=>["return_received","lease_return"].includes(e.type)).forEach(e=>{const k=e.ts.slice(0,7);map[k]=(map[k]||0)+1;});
@@ -2843,13 +2840,14 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
   },[auditEvents]);
 
   const techPerf=useMemo(()=>TECHS.map(t=>{
-    const completed=cases.filter(c=>c.tech===t.name&&["deploy_complete","checked_in","closed"].includes(c.status)).length;
+    const completed=refreshCases.filter(c=>c.tech===t.name&&[...REFRESH_COMPLETED_STATUSES,...REFRESH_CLOSED_STATUSES,"returned","checked_in"].includes(c.status)).length;
     const provisioning=auditEvents.filter(e=>e.type==="provisioning"&&e.by===t.name).length;
     const shipped=auditEvents.filter(e=>e.type==="shipment"&&e.by===t.name).length;
-    const returnsDone=cases.filter(c=>c.tech===t.name&&["checked_in","closed"].includes(c.status)).length;
-    const returnsTotal=cases.filter(c=>c.tech===t.name&&["return_pending","checked_in","closed"].includes(c.status)).length||1;
+    const techReturns=refreshReturns.filter(row=>row.tech===t.name);
+    const returnsDone=techReturns.filter(row=>REFRESH_RETURN_COMPLETE_STATUSES.includes(row.status)).length;
+    const returnsTotal=techReturns.length||1;
     return {name:t.name,completed,provisioning,shipped,avg:t.avg,returnRate:Math.round((returnsDone/returnsTotal)*100)};
-  }),[cases,auditEvents]);
+  }),[auditEvents,refreshCases,refreshReturns]);
 
   const inventoryByModel=useMemo(()=>[...INV].sort((a,b)=>b.q-a.q).slice(0,10).map(i=>({label:i.n,v:i.q})),[]);
   const agingStock=useMemo(()=>{
@@ -2898,18 +2896,18 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
       {m:"Dec",v:Math.round(q4*0.33)},
     ];
   },[]);
-  const leaseBacklog=useMemo(()=>regAssets.filter(a=>a.status==="pending_return").length+cases.filter(c=>c.status==="return_pending").length,[cases,regAssets]);
+  const leaseBacklog=useMemo(()=>refreshReturns.filter(row=>REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).length,[refreshReturns]);
   const replacementForecast=useMemo(()=>leaseWindows.d90+Math.round(WAVES.reduce((a,w)=>a+w.gb16,0)*0.35),[leaseWindows]);
 
   const risk=useMemo(()=>{
-    const missingTracking=cases.filter(c=>c.status==="return_pending").length;
+    const missingTracking=refreshReturns.filter(row=>["awaiting_return","return_pending"].includes(row.status)&&!row.tracking).length;
     const unassigned=regAssets.filter(a=>a.status==="assigned"&&(a.user==="\u2014"||!a.user)).length;
     const stuck=regAssets.filter(a=>["pending_return","repair","in_transit"].includes(a.status)).length;
     const unreturnedLeased=regAssets.filter(a=>a.status==="pending_return"&&(daysUntil(a.le)||0)<0).length;
     const incomplete=regAssets.filter(a=>!a.po||!a.pd||!a.we).length;
     const auditExceptions=auditEvents.filter(e=>e.type==="compliance"||String(e.detail||"").toLowerCase().includes("escalation")).length;
     return {missingTracking,unassigned,stuck,unreturnedLeased,incomplete,auditExceptions};
-  },[cases,auditEvents,regAssets,today]);
+  },[auditEvents,refreshReturns,regAssets,today]);
 
   const maxOf=(arr,key)=>Math.max(1,...arr.map(x=>x[key]));
   const maxRefresh=maxOf(refreshByMonth,"v");
@@ -3020,6 +3018,8 @@ function ExecutiveCommandCenter({go,setToast,assets=SEED_REG_ASSETS,cases=SEED_C
 
 function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
   const regAssets=assets;
+  const refreshRows=useMemo(()=>getOpenRefreshOperationalRows(cases),[cases]);
+  const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
   const weekdays=["Mon","Tue","Wed","Thu","Fri"];
   const startOfWeek=(d)=>{const x=new Date(`${toLocalISODate(d)}T00:00:00`);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x;};
   const monday=useMemo(()=>startOfWeek(new Date()),[]);
@@ -3034,9 +3034,17 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
 
   const tasks=useMemo(()=>{
     const out=[];
-    cases.filter(c=>c.tech&&techNames.includes(c.tech)&&c.sd).forEach(c=>{
-      const d=parseYmd(c.sd);const i=idxByDate(d);if(i===null)return;
-      out.push({id:`RF-${c.id}`,tech:c.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${c.id}`,ref:c.user,module:"refresh.queue"});
+    refreshRows.filter(row=>row.tech&&techNames.includes(row.tech)&&row.scheduled&&REFRESH_APPOINTMENT_STATUSES.includes(row.status)).forEach(row=>{
+      const d=parseYmd(row.scheduled);const i=idxByDate(d);if(i===null)return;
+      out.push({id:`RF-${row.id}`,tech:row.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${row.id}`,ref:row.user,module:"refresh.queue"});
+    });
+    refreshRows.filter(row=>row.tech&&techNames.includes(row.tech)&&row.scheduled&&REFRESH_PROVISIONING_STATUSES.includes(row.status)).forEach(row=>{
+      const d=parseYmd(row.scheduled);const i=idxByDate(d);if(i===null)return;
+      out.push({id:`PV-${row.id}`,tech:row.tech,day:i,type:"provisioning",time:timeFor("provisioning"),title:`Provision device ${row.id}`,ref:row.asset,module:"refresh.queue"});
+    });
+    refreshReturns.filter(row=>row.tech&&techNames.includes(row.tech)&&(row.returnDate||row.appointmentDate)&&REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).forEach(row=>{
+      const d=parseYmd(row.returnDate||row.appointmentDate);const i=idxByDate(d);if(i===null)return;
+      out.push({id:`RT-${row.caseId}`,tech:row.tech,day:i,type:"return",time:timeFor("return"),title:`Return processing ${row.caseId}`,ref:row.asset,module:"returns"});
     });
     auditEvents.forEach(e=>{
       const d=parseTs(e.ts);const i=idxByDate(d);if(i===null)return;
@@ -3047,16 +3055,10 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
       }
       const tech=e.by;
       if(!techNames.includes(tech))return;
-      if(e.type==="provisioning")out.push({id:`PV-${e.id}`,tech,day:i,type:"provisioning",time:timeFor("provisioning",e.ts.slice(11,16)),title:"Device provisioning",ref:e.asset,module:"inventory.stock"});
       if(e.type==="shipment")out.push({id:`SH-${e.id}`,tech,day:i,type:"shipment",time:timeFor("shipment",e.ts.slice(11,16)),title:"Shipment preparation",ref:e.asset,module:"procurement"});
-      if(["return_received","lease_return"].includes(e.type))out.push({id:`RT-${e.id}`,tech,day:i,type:"return",time:timeFor("return",e.ts.slice(11,16)),title:"Return check-in",ref:e.asset,module:"returns"});
-    });
-    SEED_BK.filter(b=>["submitted","pending_approval","approved"].includes(b.status)).forEach((b,ix)=>{
-      const tech=TECHS[ix%TECHS.length]?.name;const d=parseYmd(b.date)||new Date(monday);const i=idxByDate(d);if(i===null||!tech)return;
-      out.push({id:`BK-${b.id}`,tech,day:i,type:"inventory_prep",time:"11:00",title:"Inventory prep for booking",ref:b.id,module:"inventory.stock"});
     });
     return out;
-  },[auditEvents,cases,monday,techNames]);
+  },[auditEvents,monday,refreshReturns,refreshRows,techNames]);
 
   const [selectedTech,setSelectedTech]=useState(TECHS[0]?.name||"");
   const [selectedCell,setSelectedCell]=useState({tech:TECHS[0]?.name||"",day:0});
@@ -3064,7 +3066,7 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
   const dailySchedule=useMemo(()=>tasks.filter(t=>t.tech===selectedTech).sort((a,b)=>a.day===b.day?a.time.localeCompare(b.time):a.day-b.day),[tasks,selectedTech]);
   const byTechDay=(tech,day)=>tasks.filter(t=>t.tech===tech&&t.day===day).length;
   const techWeekly=(tech)=>tasks.filter(t=>t.tech===tech).length;
-  // Active offboarding load — distributed evenly across team (no tech assigned)
+  // Active offboarding load â€” distributed evenly across team (no tech assigned)
   const activeOffboardingCount=useMemo(()=>OFFBOARDING.filter(o=>OFF_ACTIVE_STATUSES.includes(o.status)).length,[]);
   const offboardingMinutesPerTech=useMemo(()=>{
     if(!TECHS.length)return 0;
@@ -3077,7 +3079,7 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
     const sch=techWeekly(t.name);
     // Convert scheduled tasks to minutes using this tech's avg handle time,
     // then add their share of offboarding load before computing utilization.
-    // This keeps utilization honest: 1 task ≠ 1 minute.
+    // This keeps utilization honest: 1 task â‰  1 minute.
     const schedMinutes=sch*t.avg;
     const totalMinutes=schedMinutes+offboardingMinutesPerTech;
     const capMinutes=cap*t.avg; // weekly capacity in minutes
@@ -3097,8 +3099,8 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
     ];
   },[tasks]);
   const nearLease=useMemo(()=>regAssets.filter(a=>{if(!a.le||a.le==="\u2014")return false;const d=new Date(`${a.le}T00:00:00`);return !Number.isNaN(d.getTime())&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))<=90&&((d-new Date(toLocalISODate()+"T00:00:00"))/(1000*60*60*24))>=0;}).length,[regAssets]);
-  const awaitingSchedule=useMemo(()=>cases.filter(c=>!c.sd||!c.tech).length,[cases]);
-  const pendingReturns=useMemo(()=>cases.filter(c=>c.status==="return_pending").length+regAssets.filter(a=>a.status==="pending_return").length,[cases,regAssets]);
+  const awaitingSchedule=useMemo(()=>refreshRows.filter(row=>REFRESH_CONTACT_STATUSES.includes(row.status)||!row.scheduled||!row.tech).length,[refreshRows]);
+  const pendingReturns=useMemo(()=>refreshReturns.filter(row=>REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).length,[refreshReturns]);
   const maxType=Math.max(1,...typeBreakdown.map(x=>x.v));
   const typeLabel={refresh:"Refresh",provisioning:"Provisioning",shipment:"Shipment",return:"Return",inventory_prep:"Inventory Prep"};
   const typeBg={refresh:C.accentSoft,provisioning:C.orangeSoft,shipment:C.cyanSoft,return:C.greenSoft,inventory_prep:C.purpleSoft};
@@ -3119,7 +3121,7 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
         {dailySchedule.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks scheduled this week.</div>:dailySchedule.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{width:72,fontFamily:MN,fontSize:10,color:C.muted}}>{fmtDay(t.day)}</span><span style={{width:44,fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:typeBg[t.type],color:typeCol[t.type],fontWeight:600,fontFamily:MN}}>{typeLabel[t.type]}</span><span style={{fontSize:11.5,flex:1}}>{t.title}</span><button onClick={()=>go(t.module)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,fontSize:10.5,cursor:"pointer"}}>Open</button></div>)}
       </div>
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
-        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Cell Detail: {selectedCell.tech} Ã¢â‚¬Â¢ {fmtDay(selectedCell.day)}</div>
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Cell Detail: {selectedCell.tech} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {fmtDay(selectedCell.day)}</div>
         {cellTasks.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks in selected cell.</div>:cellTasks.map(t=><div key={t.id} style={{padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11.5,fontWeight:500}}>{t.title}</span><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span></div><div style={{fontSize:10,color:C.muted}}>{t.ref}</div></div>)}
       </div>
     </div>
@@ -3159,6 +3161,8 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
 
 function TeamWorkloadView({go,cases,auditEvents}){
   const [expandedTech,setExpandedTech]=useState(TECHS[0]?.name||null);
+  const refreshRows=useMemo(()=>getOpenRefreshOperationalRows(cases),[cases]);
+  const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
   const typeStyle={
     refresh:{label:"Refresh",color:C.accent,bg:C.accentSoft,border:C.accentBorder,route:"refresh.queue"},
     provisioning:{label:"Provision",color:C.orange,bg:C.orangeSoft,border:C.orangeBorder,route:"refresh.queue"},
@@ -3166,23 +3170,32 @@ function TeamWorkloadView({go,cases,auditEvents}){
     inventory:{label:"Inventory",color:C.purple,bg:C.purpleSoft,border:C.purpleBorder,route:"inventory.bookings"},
     offboarding:{label:"Offboarding",color:C.amber,bg:C.amberSoft,border:C.amberBorder,route:"offboarding"},
   };
-  // Active offboarding cases (no tech assigned — distributed evenly across team)
+  // Active offboarding cases (no tech assigned â€” distributed evenly across team)
   const activeOffboarding=useMemo(()=>OFFBOARDING.filter(o=>OFF_ACTIVE_STATUSES.includes(o.status)),[]);
   const techWorkload=useMemo(()=>TECHS.map((tech,techIdx)=>{
-    const refreshTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&c.sd&&!["deploy_complete","checked_in","closed"].includes(c.status)).map(c=>({id:`R-${c.id}`,type:"refresh",title:`Refresh appointment ${c.id}`,detail:`${c.user} · ${c.sd}`,route:"refresh.queue"}));
-    const provisioningTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&["reserved","provisioning","shipped"].includes(c.status)).map(c=>({id:`P-${c.id}`,type:"provisioning",title:`Provision device ${c.id}`,detail:`${c.at||"\u2014"} · ${c.user}`,route:"refresh.queue"}));
-    const returnTasks=cases.filter(c=>c.tech===tech.name&&((c.type==="return_case"&&!["closed"].includes(c.status))||["return_pending","checked_in"].includes(c.status))).map(c=>({id:`T-${c.id}`,type:"returns",title:`Return processing ${c.id}`,detail:`${c.at||"\u2014"} · ${CASE_STATUS[c.status]?.l||RF_S[c.status]?.s||c.status}`,route:"returns"}));
-    const inventoryTasks=auditEvents.filter(e=>e.by===tech.name&&e.type==="reservation").map(e=>({id:`I-${e.id}`,type:"inventory",title:`Inventory reservation ${e.asset}`,detail:`${e.user||"\u2014"} · ${AUD_TYPE[e.type]?.l||e.type}`,route:"inventory.stock"}));
+    const refreshTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&c.sd&&!["deploy_complete","checked_in","closed"].includes(c.status)).map(c=>({id:`R-${c.id}`,type:"refresh",title:`Refresh appointment ${c.id}`,detail:`${c.user} Â· ${c.sd}`,route:"refresh.queue"}));
+    const provisioningTasks=cases.filter(c=>c.tech===tech.name&&c.type==="refresh"&&["reserved","provisioning","shipped"].includes(c.status)).map(c=>({id:`P-${c.id}`,type:"provisioning",title:`Provision device ${c.id}`,detail:`${c.at||"\u2014"} Â· ${c.user}`,route:"refresh.queue"}));
+    const returnTasks=cases.filter(c=>c.tech===tech.name&&((c.type==="return_case"&&!["closed"].includes(c.status))||["return_pending","checked_in"].includes(c.status))).map(c=>({id:`T-${c.id}`,type:"returns",title:`Return processing ${c.id}`,detail:`${c.at||"\u2014"} Â· ${CASE_STATUS[c.status]?.l||RF_S[c.status]?.s||c.status}`,route:"returns"}));
+    const inventoryTasks=auditEvents.filter(e=>e.by===tech.name&&e.type==="reservation").map(e=>({id:`I-${e.id}`,type:"inventory",title:`Inventory reservation ${e.asset}`,detail:`${e.user||"\u2014"} Â· ${AUD_TYPE[e.type]?.l||e.type}`,route:"inventory.stock"}));
     // Distribute unassigned offboarding cases round-robin across technicians
-    const offboardingTasks=activeOffboarding.filter((_,i)=>i%TECHS.length===techIdx).map(o=>({id:`OB-${o.id}`,type:"offboarding",title:`Offboarding: ${o.user}`,detail:`${o.taskId||"\u2014"} · ${OFF_STAT[o.status]?.l||o.status}`,route:"offboarding"}));
+    const offboardingTasks=activeOffboarding.filter((_,i)=>i%TECHS.length===techIdx).map(o=>({id:`OB-${o.id}`,type:"offboarding",title:`Offboarding: ${o.user}`,detail:`${o.taskId||"\u2014"} Â· ${OFF_STAT[o.status]?.l||o.status}`,route:"offboarding"}));
     const tasks=[...refreshTasks,...provisioningTasks,...returnTasks,...inventoryTasks,...offboardingTasks];
     return {tech,tasks,counts:{refresh:refreshTasks.length,provisioning:provisioningTasks.length,returns:returnTasks.length,inventory:inventoryTasks.length,offboarding:offboardingTasks.length},total:tasks.length};
   }),[cases,auditEvents,activeOffboarding]);
+  const normalizedTechWorkload=useMemo(()=>TECHS.map((tech,techIdx)=>{
+    const refreshTasks=refreshRows.filter(row=>row.tech===tech.name&&REFRESH_APPOINTMENT_STATUSES.includes(row.status)).map(row=>({id:`R-${row.id}`,type:"refresh",title:`Refresh appointment ${row.id}`,detail:`${row.user} Â· ${row.scheduled||"TBD"}`,route:"refresh.queue"}));
+    const provisioningTasks=refreshRows.filter(row=>row.tech===tech.name&&REFRESH_PROVISIONING_STATUSES.includes(row.status)).map(row=>({id:`P-${row.id}`,type:"provisioning",title:`Provision device ${row.id}`,detail:`${row.asset||"\u2014"} Â· ${row.user}`,route:"refresh.queue"}));
+    const returnTasks=refreshReturns.filter(row=>row.tech===tech.name&&REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).map(row=>({id:`T-${row.caseId}`,type:"returns",title:`Return processing ${row.caseId}`,detail:`${row.asset||"\u2014"} Â· ${CASE_STATUS[row.status]?.l||RF_S[row.status]?.s||row.status}`,route:"returns"}));
+    const inventoryTasks=auditEvents.filter(e=>e.by===tech.name&&e.type==="reservation").map(e=>({id:`I-${e.id}`,type:"inventory",title:`Inventory reservation ${e.asset}`,detail:`${e.user||"\u2014"} Â· ${AUD_TYPE[e.type]?.l||e.type}`,route:"inventory.stock"}));
+    const offboardingTasks=activeOffboarding.filter((_,i)=>i%TECHS.length===techIdx).map(o=>({id:`OB-${o.id}`,type:"offboarding",title:`Offboarding: ${o.user}`,detail:`${o.taskId||"\u2014"} Â· ${OFF_STAT[o.status]?.l||o.status}`,route:"offboarding"}));
+    const tasks=[...refreshTasks,...provisioningTasks,...returnTasks,...inventoryTasks,...offboardingTasks];
+    return {tech,tasks,counts:{refresh:refreshTasks.length,provisioning:provisioningTasks.length,returns:returnTasks.length,inventory:inventoryTasks.length,offboarding:offboardingTasks.length},total:tasks.length};
+  }),[activeOffboarding,auditEvents,refreshReturns,refreshRows]);
 
   return (<>
-    <SH color={C.purple} badge={`${techWorkload.length} technicians`}>Team Workload</SH>
+    <SH color={C.purple} badge={`${normalizedTechWorkload.length} technicians`}>Team Workload</SH>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10}}>
-      {techWorkload.map(({tech,tasks,counts,total})=>{
+      {normalizedTechWorkload.map(({tech,tasks,counts,total})=>{
         const expanded=expandedTech===tech.name;
         return (
           <div key={tech.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,overflow:"hidden"}}>
@@ -3191,7 +3204,7 @@ function TeamWorkloadView({go,cases,auditEvents}){
                 <div>
                   <div style={{fontSize:14,fontWeight:700}}>{tech.name}</div>
                   {total===0&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>No active assignments</div>}
-                  <div style={{fontSize:10.5,color:C.muted}}>{tech.role} · {tech.home}</div>
+                  <div style={{fontSize:10.5,color:C.muted}}>{tech.role} Â· {tech.home}</div>
                 </div>
                 <span style={{fontFamily:MN,fontSize:18,fontWeight:700,color:total?C.accent:C.muted}}>{total}</span>
               </div>
@@ -3227,7 +3240,7 @@ function TeamWorkloadView({go,cases,auditEvents}){
 function OperationsAlertsExceptionCenter({go,setToast,cases=SEED_CASES,auditEvents=AUDIT_EVENTS,assets=SEED_REG_ASSETS}){
   const regAssets=assets;
   const today=useMemo(()=>new Date(`${toLocalISODate()}T00:00:00`),[]);
-  const parseYmd=(s)=>{if(!s||s==="—")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
+  const parseYmd=(s)=>{if(!s||s==="â€”")return null;const d=new Date(`${s}T00:00:00`);return Number.isNaN(d.getTime())?null:d;};
   const daysLate=(d,allow=0)=>{if(!d)return 0;const raw=Math.floor((today-d)/(1000*60*60*24));return Math.max(0,raw-allow);};
   const sevColor={Critical:C.red,High:C.orange,Medium:C.amber,Low:C.gray};
   const sevBg={Critical:C.redSoft,High:C.orangeSoft,Medium:C.amberSoft,Low:C.graySoft};
@@ -3270,7 +3283,7 @@ function OperationsAlertsExceptionCenter({go,setToast,cases=SEED_CASES,auditEven
         <table style={{width:"100%",minWidth:980}}>
           <thead><tr>{["Alert Type","Asset Tag","User","Technician","Source System","Days Overdue","Recommended Action"].map(h=><th key={h} style={{position:"sticky",top:0,zIndex:5,padding:"7px 8px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{alerts.length===0&&<tr><td colSpan={7} style={{padding:20,textAlign:"center",color:C.muted}}>No active alerts.</td></tr>}
-            {alerts.map((a,i)=><tr key={a.id} onClick={()=>setSelId(a.id)} style={{cursor:"pointer"}}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:sevBg[a.sev],color:sevColor[a.sev],fontWeight:700,fontFamily:MN,marginRight:6}}>{a.sev}</span>{a.type}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,color:C.accent,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.asset||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.user||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.tech||"—"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.source}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,fontWeight:700,color:a.days>10?C.red:C.amber,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.days}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.action}</td></tr>)}
+            {alerts.map((a,i)=><tr key={a.id} onClick={()=>setSelId(a.id)} style={{cursor:"pointer"}}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:sevBg[a.sev],color:sevColor[a.sev],fontWeight:700,fontFamily:MN,marginRight:6}}>{a.sev}</span>{a.type}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,color:C.accent,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.asset||"â€”"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.user||"â€”"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.tech||"â€”"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.source}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,fontFamily:MN,fontWeight:700,color:a.days>10?C.red:C.amber,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.days}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:selId===a.id?C.accentSoft:i%2?C.surfaceAlt:C.surface}}>{a.action}</td></tr>)}
           </tbody>
         </table>
       </div>
@@ -3281,7 +3294,7 @@ function OperationsAlertsExceptionCenter({go,setToast,cases=SEED_CASES,auditEven
           <div style={{marginTop:6,fontSize:13,fontWeight:600}}>{selected.type}</div>
           <div style={{fontSize:11,color:C.muted,fontFamily:MN,marginTop:2}}>{selected.id}</div>
           <div style={{marginTop:8,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-            {[["Asset",selected.asset||"—"],["User",selected.user||"—"],["Technician",selected.tech||"—"],["Source",selected.source],["Days Overdue",String(selected.days)],["Action",selected.action]].map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11.5,fontWeight:500,maxWidth:180,textAlign:"right"}}>{v}</span></div>)}
+            {[["Asset",selected.asset||"â€”"],["User",selected.user||"â€”"],["Technician",selected.tech||"â€”"],["Source",selected.source],["Days Overdue",String(selected.days)],["Action",selected.action]].map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{fontSize:11,color:C.muted}}>{l}</span><span style={{fontSize:11.5,fontWeight:500,maxWidth:180,textAlign:"right"}}>{v}</span></div>)}
           </div>
           <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
             <button onClick={()=>go(selected.route)} style={{padding:"6px 10px",borderRadius:6,border:`1px solid ${C.accentBorder}`,background:C.accentSoft,color:C.accent,fontSize:11,cursor:"pointer"}}>Open Related Record</button>
@@ -3313,14 +3326,14 @@ function OperationsAlertsExceptionCenter({go,setToast,cases=SEED_CASES,auditEven
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // UNIFIED CASE MANAGEMENT LAYER
 // Model + statuses + seed data + queue + create form + detail drawer
 // with bidirectional asset linking and operational workflow actions
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
-// â”€â”€â”€ CASE TYPES + STATUS CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// CASE_TYPES, CASE_STATUS — via createCaseDomain(C) from ./features/cases/domain.js
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CASE TYPES + STATUS CONFIG Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// CASE_TYPES, CASE_STATUS â€” via createCaseDomain(C) from ./features/cases/domain.js
 
 const CASE_PRI={critical:{l:"Critical",c:C.red},high:{l:"High",c:C.orange},medium:{l:"Medium",c:C.amber},low:{l:"Low",c:C.gray}};
 const CSChip=({s})=>{const x=CASE_STATUS[s];return x?(<span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:600,color:x.c,background:x.bg,border:`1px solid ${x.bd}40`,fontFamily:MN,whiteSpace:"nowrap"}}><span style={{width:5,height:5,borderRadius:"50%",background:x.c}}/>{x.l}</span>):(<span style={{fontSize:10,color:C.muted}}>{s}</span>);};
@@ -3335,8 +3348,8 @@ const LABEL_STATUS={
   in_transit: {l:"In Transit",     c:C.accent, bg:C.accentSoft},
   delivered:  {l:"Delivered",      c:C.green,  bg:C.greenSoft},
 };
-// Null shipment — used as the default for any refresh case that has no label yet.
-// Build a populated mock shipment object — stands in for the FedEx API response
+// Null shipment â€” used as the default for any refresh case that has no label yet.
+// Build a populated mock shipment object â€” stands in for the FedEx API response
 const mockShipment=(direction,caseRecord,overrides={})=>{
   const now=toLocalTimestamp();
   const isReturn=direction==="return";
@@ -3348,7 +3361,7 @@ const mockShipment=(direction,caseRecord,overrides={})=>{
     carrier:"FedEx",
     createdAt:now,
     createdBy:"Current User",
-    recipientName:isReturn?"ITAM Warehouse — Charlotte (PTC)":(caseRecord?.userId||""),
+    recipientName:isReturn?"ITAM Warehouse â€” Charlotte (PTC)":(caseRecord?.userId||""),
     recipientAddress:isReturn?"5765 Flat Rock Rd, Charlotte NC 28217":(caseRecord?.locationId||""),
     shipFromAddress:isReturn?(caseRecord?.locationId||"User Location"):"Charlotte, NC (PTC)",
     weight:"5 lbs",
@@ -3357,24 +3370,24 @@ const mockShipment=(direction,caseRecord,overrides={})=>{
   };
 };
 
-// ─── REFRESH EMAIL TEMPLATES ──────────────────────────────────────────────────
+// â”€â”€â”€ REFRESH EMAIL TEMPLATES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Frontend-only for now. Each template is a function that takes a case record
 // and returns { subject, body } with all case-specific fields interpolated.
 //
 // FUTURE INTEGRATION HOOK:
-//   sendRefreshEmail(cs, templateKey) → look up template → call email service
+//   sendRefreshEmail(cs, templateKey) â†’ look up template â†’ call email service
 //   e.g. POST /api/email  { to: cs.userId, subject, body }
 //        or Power Automate flow trigger
 //        or ServiceNow notification API
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const REFRESH_EMAIL_TEMPLATES={
   refresh_notification:{
     label:"Refresh Notification",
-    // Triggered at: new → contacted
-    // Advances status: yes (new → contacted)
+    // Triggered at: new â†’ contacted
+    // Advances status: yes (new â†’ contacted)
     advancesTo:"contacted",
     build:(cs)=>({
-      subject:`Your device refresh is scheduled — Action Required`,
+      subject:`Your device refresh is scheduled â€” Action Required`,
       body:`Hi ${cs.userId||"there"},\n\nYour current device${cs.assetId?` (${cs.assetId})`:" "} has been identified for refresh. Our IT Asset Management team will be reaching out to coordinate a convenient appointment.\n\nPlease keep an eye out for a calendar invite or follow-up email. If you have any questions or scheduling preferences, reply to this message.\n\nCase Reference: ${cs.id}\nOffice / Location: ${cs.locationId||"TBD"}\nTechnician: ${cs.tech||"ITAM Team"}\n\nThank you,\nIT Asset Management`,
     }),
   },
@@ -3389,7 +3402,7 @@ const REFRESH_EMAIL_TEMPLATES={
   },
   return_reminder:{
     label:"Return Reminder",
-    // Triggered at: awaiting_return (no status change — nudge email)
+    // Triggered at: awaiting_return (no status change â€” nudge email)
     advancesTo:null,
     build:(cs)=>({
       subject:`Action Required: Please return your old device`,
@@ -3398,23 +3411,23 @@ const REFRESH_EMAIL_TEMPLATES={
   },
 };
 
-// â”€â”€â”€ SEED CASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SEED CASES Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const SEED_CASES=[
   {id:"CS-2026-0001",type:"onboarding",status:"scheduled",priority:"medium",created:"2026-03-01",due:"2026-03-10",tech:"Anthony Cousin",requestor:"HR Onboarding",userId:"Taylor Whitfield",assetId:"",replacementId:"",locationId:"Charlotte (PTC)",notes:"New hire start Mar 10.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-01 09:00",type:"created",by:"HR Onboarding",detail:"Case created"},{ts:"2026-03-02 14:00",type:"status_change",by:"Anthony Cousin",detail:"Scheduled for Mar 10"}]},
   {id:"CS-2026-0002",type:"onboarding",status:"in_progress",priority:"high",created:"2026-03-04",due:"2026-03-06",tech:"Micah Harris",requestor:"HR Onboarding",userId:"Hannah Price",assetId:"",replacementId:"",locationId:"Atlanta (ATL)",notes:"Virtual session.",shipmentId:"888910552103",ticketId:"",procurementId:"",events:[{ts:"2026-03-04 08:00",type:"created",by:"HR",detail:"Onboarding created"},{ts:"2026-03-06 10:00",type:"status_change",by:"Micah Harris",detail:"Session started"}]},
-  {id:"CS-2026-0003",type:"refresh",status:"appointment_booked",priority:"high",created:"2026-02-20",due:"2026-03-18",tech:"Jonathan Gamble",requestor:"Refresh Engine",userId:"Cara Warren",assetId:"TP-2744",replacementId:"",locationId:"Atlanta (ATL)",notes:"ThinkPad X1 Gen 9 — lease expiring.",shipmentId:"",ticketId:"",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT},events:[{ts:"2026-02-20 02:00",type:"created",by:"Refresh Engine",detail:"Auto: lease exp 86d"},{ts:"2026-03-05 10:00",type:"status_change",by:"Jonathan Gamble",detail:"Notification sent, appointment booked Mar 18 ATL"}]},
+  {id:"CS-2026-0003",type:"refresh",status:"appointment_booked",priority:"high",created:"2026-02-20",due:"2026-03-18",tech:"Jonathan Gamble",requestor:"Refresh Engine",userId:"Cara Warren",assetId:"TP-2744",replacementId:"",locationId:"Atlanta (ATL)",notes:"ThinkPad X1 Gen 9 â€” lease expiring.",shipmentId:"",ticketId:"",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT},events:[{ts:"2026-02-20 02:00",type:"created",by:"Refresh Engine",detail:"Auto: lease exp 86d"},{ts:"2026-03-05 10:00",type:"status_change",by:"Jonathan Gamble",detail:"Notification sent, appointment booked Mar 18 ATL"}]},
   {id:"CS-2026-0004",type:"refresh",status:"provisioning",priority:"high",created:"2026-02-15",due:"2026-03-20",tech:"Anthony Cousin",requestor:"Refresh Engine",userId:"Angus Gambill",assetId:"TY-2580",replacementId:"",locationId:"Charlotte (PTC)",notes:"Device provisioned. Autopilot registered.",shipmentId:"",ticketId:"",procurementId:"",outboundShipment:{...NULL_SHIPMENT},returnShipment:{...NULL_SHIPMENT},events:[{ts:"2026-02-15 02:00",type:"created",by:"Refresh Engine",detail:"Auto-created"},{ts:"2026-03-15 14:00",type:"status_change",by:"Anthony Cousin",detail:"Device issued and provisioning in progress"}]},
   {id:"CS-2026-0005",type:"offboarding",status:"followup_2_sent",priority:"high",created:"2026-02-14",due:"2026-02-28",tech:"",requestor:"Help Desk",userId:"Ava Jones",assetId:"PF4244WV",replacementId:"",locationId:"Scottsdale (SCO)",notes:"No response 15+ days. SCTASK0221608.",shipmentId:"",ticketId:"SCTASK0221608",procurementId:"",events:[{ts:"2026-02-14 09:00",type:"created",by:"Help Desk",detail:"Offboarding from AD disable"},{ts:"2026-03-01 09:00",type:"status_change",by:"ITAM Coordinator",detail:"Follow-up 2 sent: no response"}]},
   {id:"CS-2026-0006",type:"offboarding",status:"label_sent",priority:"medium",created:"2026-02-17",due:"2026-03-03",tech:"",requestor:"Help Desk",userId:"Ruth Lopez",assetId:"PF3LN9T4",replacementId:"",locationId:"Plano (TX)",notes:"SCTASK0223036.",shipmentId:"888843359119",ticketId:"SCTASK0223036",procurementId:"",events:[{ts:"2026-02-17 09:00",type:"created",by:"Help Desk",detail:"Offboarding created"},{ts:"2026-02-17 14:00",type:"status_change",by:"ITAM Coordinator",detail:"Initial email sent with return label"}]},
-  {id:"CS-2026-0007",type:"break_fix",status:"repair_in_progress",priority:"high",created:"2026-02-19",due:"2026-03-19",tech:"Michael Girardi",requestor:"Help Desk",userId:"Tina Walters",assetId:"0F37Q6G24053FB",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 5 — at Microsoft. MS-4820193.",shipmentId:"",ticketId:"MS-4820193",procurementId:"",events:[{ts:"2026-02-19 10:00",type:"created",by:"Help Desk",detail:"Break-fix created"},{ts:"2026-02-22 14:00",type:"status_change",by:"Michael Girardi",detail:"Sent to MS repair"},{ts:"2026-03-04 09:00",type:"status_change",by:"System",detail:"MS: repair in progress"}]},
-  {id:"CS-2026-0008",type:"break_fix",status:"ticket_submitted",priority:"medium",created:"2026-03-05",due:"2026-03-19",tech:"Jon Dinh",requestor:"Help Desk",userId:"Thomas Reed",assetId:"0F339FB25033GT",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 6 — will not boot.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-05 15:00",type:"created",by:"Help Desk",detail:"Device will not boot. Potential PSU failure."}]},
+  {id:"CS-2026-0007",type:"break_fix",status:"repair_in_progress",priority:"high",created:"2026-02-19",due:"2026-03-19",tech:"Michael Girardi",requestor:"Help Desk",userId:"Tina Walters",assetId:"0F37Q6G24053FB",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 5 â€” at Microsoft. MS-4820193.",shipmentId:"",ticketId:"MS-4820193",procurementId:"",events:[{ts:"2026-02-19 10:00",type:"created",by:"Help Desk",detail:"Break-fix created"},{ts:"2026-02-22 14:00",type:"status_change",by:"Michael Girardi",detail:"Sent to MS repair"},{ts:"2026-03-04 09:00",type:"status_change",by:"System",detail:"MS: repair in progress"}]},
+  {id:"CS-2026-0008",type:"break_fix",status:"ticket_submitted",priority:"medium",created:"2026-03-05",due:"2026-03-19",tech:"Jon Dinh",requestor:"Help Desk",userId:"Thomas Reed",assetId:"0F339FB25033GT",replacementId:"",locationId:"Charlotte (PTC)",notes:"Surface Laptop 6 â€” will not boot.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-05 15:00",type:"created",by:"Help Desk",detail:"Device will not boot. Potential PSU failure."}]},
   {id:"CS-2026-0009",type:"return_case",status:"in_transit",priority:"medium",created:"2026-03-03",due:"2026-03-13",tech:"Anthony Cousin",requestor:"ITAM Coordinator",userId:"Sam Vives",assetId:"TP-2801",replacementId:"",locationId:"Charlotte (PTC)",notes:"Refresh old device. FX-RTN-2026-0045.",shipmentId:"FX-RTN-2026-0045",ticketId:"",procurementId:"",events:[{ts:"2026-03-03 10:00",type:"created",by:"ITAM Coordinator",detail:"Return for refresh device"},{ts:"2026-03-03 14:00",type:"shipment",by:"System",detail:"FedEx label sent"}]},
   {id:"CS-2026-0010",type:"return_case",status:"received",priority:"low",created:"2026-02-28",due:"2026-03-10",tech:"Warehouse Tech",requestor:"ITAM Coordinator",userId:"Lynn Sailors",assetId:"TP-2654",replacementId:"",locationId:"Charlotte (PTC)",notes:"Scanned. Condition: Good.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-02-28 09:00",type:"created",by:"ITAM Coordinator",detail:"Return created"},{ts:"2026-03-05 16:30",type:"status_change",by:"Warehouse Tech",detail:"Scanned. Good condition."}]},
   {id:"CS-2026-0011",type:"procurement_exception",status:"pending_approval",priority:"medium",created:"2026-03-04",due:"2026-03-18",tech:"",requestor:"Derek Simmons",userId:"Derek Simmons",assetId:"",replacementId:"",locationId:"Scottsdale (SCO)",notes:"MacBook M4 Pro request for ML workload.",shipmentId:"",ticketId:"",procurementId:"",events:[{ts:"2026-03-04 11:00",type:"created",by:"Derek Simmons",detail:"Exception: MacBook M4 Pro"},{ts:"2026-03-04 14:00",type:"note",by:"IT Manager",detail:"Reviewing justification."}]},
   {id:"CS-2026-0012",type:"offboarding",status:"escalated",priority:"critical",created:"2025-03-10",due:"2025-04-10",tech:"",requestor:"Help Desk",userId:"Daija Francis",assetId:"PF3F4DBR",replacementId:"",locationId:"Atlanta (ATL)",notes:"365+ days. Multiple follow-ups. SCTASK0189091.",shipmentId:"881217933140",ticketId:"SCTASK0189091",procurementId:"",events:[{ts:"2025-03-10 09:00",type:"created",by:"Help Desk",detail:"Offboarding created"},{ts:"2026-02-20 16:00",type:"status_change",by:"ITAM Coordinator",detail:"Escalated. 365+ days."}]},
 ];
 
-// â”€â”€â”€ CASE HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CASE HELPERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 let _caseSeq=12;
 const syncCaseSeqWithCases=(cases=[])=>{
   const maxSeen=cases.reduce((maxValue,cs)=>{
@@ -3429,8 +3442,57 @@ const nowTs=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
 const addEvent=(cs,type,by,detail)=>({...cs,events:[...cs.events,{ts:nowTs(),type,by,detail}]});
 // Bidirectional lookup: cases linked to an asset
 const casesForAsset=(cases,assetId)=>assetId?cases.filter(c=>c.assetId===assetId||c.replacementId===assetId):[];
+const REFRESH_CONTACT_STATUSES=["new","contacted","appointment_pending","pending_contact","follow_up"];
+const REFRESH_APPOINTMENT_STATUSES=["appointment_booked","scheduled"];
+const REFRESH_SCHEDULED_STATUSES=["appointment_booked","label_created","device_issued","provisioning","shipped","scheduled"];
+const REFRESH_COMPLETED_STATUSES=["appointment_complete","deploy_complete"];
+const REFRESH_RETURN_ACTIVE_STATUSES=["appointment_complete","awaiting_return","return_pending","returned","checked_in"];
+const REFRESH_CLOSED_STATUSES=["completed","closed","canceled"];
+const REFRESH_PROVISIONING_STATUSES=["label_created","device_issued","provisioning","shipped"];
+const REFRESH_RETURN_PENDING_STATUSES=["appointment_complete","awaiting_return","return_pending"];
+const REFRESH_RETURN_COMPLETE_STATUSES=["returned","checked_in","completed","closed"];
+const parseCaseDateOnly=(value)=>{
+  if(!value)return null;
+  const normalized=String(value).trim().slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(normalized))return null;
+  const date=new Date(`${normalized}T00:00:00`);
+  return Number.isNaN(date.getTime())?null:date;
+};
+const daysFromToday=(value)=>{
+  const date=parseCaseDateOnly(value);
+  if(!date)return null;
+  return Math.floor((date-new Date(`${toLocalISODate()}T00:00:00`))/(1000*60*60*24));
+};
+const getRefreshCases=(cases=[])=>cases.filter(cs=>cs?.type==="refresh");
+const getOpenRefreshCases=(cases=[])=>getRefreshCases(cases).filter(cs=>!REFRESH_CLOSED_STATUSES.includes(cs.status));
+const getRefreshOperationalRows=(cases=[])=>getRefreshCases(cases).map(cs=>({
+  id:cs.id,
+  asset:cs.assetId||"\u2014",
+  user:cs.userId||"\u2014",
+  office:cs.locationId||"\u2014",
+  status:cs.status,
+  priority:(cs.priority||"medium").toUpperCase(),
+  tech:cs.tech||"",
+  scheduled:cs.appointmentDate||cs.due||"",
+  dte:daysFromToday(cs.appointmentDate||cs.due),
+}));
+const getOpenRefreshOperationalRows=(cases=[])=>getRefreshOperationalRows(cases).filter(row=>!REFRESH_CLOSED_STATUSES.includes(row.status));
+const getRefreshAppointmentWorkload=(cases=[])=>getOpenRefreshOperationalRows(cases).filter(row=>row.tech&&[...REFRESH_APPOINTMENT_STATUSES,...REFRESH_PROVISIONING_STATUSES].includes(row.status));
+const getRefreshReturnRows=(cases=[])=>getRefreshCases(cases).filter(cs=>cs.returnExpected||REFRESH_RETURN_ACTIVE_STATUSES.includes(cs.status)||["completed","closed"].includes(cs.status)).map(cs=>({
+  id:`RTN-${cs.id}`,
+  caseId:cs.id,
+  asset:cs.assetId||"\u2014",
+  user:cs.userId||"\u2014",
+  tech:cs.tech||"",
+  office:cs.locationId||"\u2014",
+  status:cs.status,
+  appointmentDate:cs.appointmentDate||cs.due||"",
+  returnDate:cs.returnReceivedDate||"",
+  tracking:cs.returnShipment?.trackingNumber||cs.shipmentId||"",
+  notes:cs.notes||"",
+})).filter(row=>row.asset!=="\u2014"||row.status!=="canceled");
 
-// â”€â”€â”€ CASE MANAGEMENT MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CASE MANAGEMENT MODULE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId,onConsumeSelection,onConsumePrefill,onCaseTransition,currentNav,onOpenAsset,assets=[],onUpdateAsset}){
   const [tab,setTab]=useState(prefill?"create":"queue");
   const [sel,setSel]=useState(null);
@@ -3456,8 +3518,8 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
     if(tab==="create")setForm(initForm);
   },[prefill,tab,onConsumePrefill]);
   // Keep internal tab in sync with sidebar nav at all times:
-  //   cases.create           → "create" (blank form if no prefill)
-  //   cases / cases.all      → "queue"  (always — this was the missing branch)
+  //   cases.create           â†’ "create" (blank form if no prefill)
+  //   cases / cases.all      â†’ "queue"  (always â€” this was the missing branch)
   useEffect(()=>{
     if(currentNav==="cases.create"){
       if(!prefill){setTab("create");setForm(initForm);}
@@ -3575,7 +3637,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
   const drawerReplacementOptions=useMemo(()=>det?.type==="refresh"?getReplacementOptions(replacementDraft||det.replacementId,replacementSearchDrawer,det.id):[],[det,replacementDraft,replacementSearchDrawer,assets,activeReplacementCaseByTag]);
   const selectedFormReplacement=getReplacementSummary(form.replacementId);
   const selectedDrawerReplacement=getReplacementSummary(replacementDraft||det?.replacementId);
-  // ─── Phase 2: case actions via createCaseActions (from ./features/cases/actions.js) ───
+  // â”€â”€â”€ Phase 2: case actions via createCaseActions (from ./features/cases/actions.js) â”€â”€â”€
   const {
     caseActionDetailed, caseAction, caseUpdate,
     saveRefreshExecution, markRefreshReadyToShip, markRefreshShipped,
@@ -3608,11 +3670,11 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
   };
 
 
-  // â”€â”€ Inline edit state for operational fields â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Inline edit state for operational fields Ã¢â€â‚¬Ã¢â€â‚¬
   const [editField,setEditField]=useState(null);
   const [editVal,setEditVal]=useState("");
 
-  // â”€â”€ Render operational actions based on case type + status â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Render operational actions based on case type + status Ã¢â€â‚¬Ã¢â€â‚¬
   const renderOpsActions=(cs)=>{
     const closed=["completed","closed","canceled","rejected"].includes(cs.status);
     if(closed)return <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>Case closed</div>;
@@ -3620,44 +3682,44 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
     const ab=(label,color,onClick)=>btns.push(<button key={label} onClick={onClick} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${color}40`,background:color+"14",color,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{label}</button>);
 
     if(cs.type==="refresh"){
-      // ── Step 1: Send Refresh Notification (new → contacted) ──────────────
+      // â”€â”€ Step 1: Send Refresh Notification (new â†’ contacted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="new")
         ab("Send Refresh Notification",C.cyan,()=>sendRefreshEmail(cs,"refresh_notification"));
-      // ── Step 2: Record Appointment (contacted → appointment_pending) ──────
+      // â”€â”€ Step 2: Record Appointment (contacted â†’ appointment_pending) â”€â”€â”€â”€â”€â”€
       if(cs.status==="contacted")
         ab("Record Appointment",C.cyan,()=>caseAction(cs.id,"appointment_pending"));
-      // ── Step 3: Confirm Appointment Booking (appointment_pending → appointment_booked) ─
+      // â”€â”€ Step 3: Confirm Appointment Booking (appointment_pending â†’ appointment_booked) â”€
       if(cs.status==="appointment_pending"){
         ab("Confirm Appointment",C.cyan,()=>scheduleRefreshAppointment(cs));
         ab("Send Appt Reminder",C.amber,()=>sendRefreshEmail(cs,"appointment_reminder"));
       }
-      // ── Step 4: Create Outbound Label (appointment_booked → label_created) ─
+      // â”€â”€ Step 4: Create Outbound Label (appointment_booked â†’ label_created) â”€
       if(cs.status==="appointment_booked")
         ab("Create Outbound Label",C.purple,()=>{createOutboundLabel(cs);caseAction(cs.id,"label_created");});
-      // ── Step 5: Issue Device (label_created → device_issued) ──────────────
+      // â”€â”€ Step 5: Issue Device (label_created â†’ device_issued) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="label_created")
         ab("Issue Device",C.orange,()=>caseAction(cs.id,"device_issued"));
-      // ── Step 6: Mark Provisioning (device_issued → provisioning) ──────────
+      // â”€â”€ Step 6: Mark Provisioning (device_issued â†’ provisioning) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="device_issued")
         ab("Mark Provisioning",C.orange,()=>caseAction(cs.id,"provisioning"));
-      // ── Step 7: Mark Shipped (provisioning → shipped) ─────────────────────
+      // â”€â”€ Step 7: Mark Shipped (provisioning â†’ shipped) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="provisioning")
         ab("Mark Shipped",C.accent,()=>markRefreshShipped(cs));
-      // ── Step 8: Mark Appointment Complete (shipped → appointment_complete) ─
+      // â”€â”€ Step 8: Mark Appointment Complete (shipped â†’ appointment_complete) â”€
       if(cs.status==="shipped")
-        ab("Mark Appointment Complete",C.green,()=>caseActionDetailed(cs.id,"appointment_complete",{},"","Refresh appointment completed — device handed off"));
-      // ── Step 9: Create Return Label + Mark Awaiting Return ─────────────────
+        ab("Mark Appointment Complete",C.green,()=>caseActionDetailed(cs.id,"appointment_complete",{},"","Refresh appointment completed â€” device handed off"));
+      // â”€â”€ Step 9: Create Return Label + Mark Awaiting Return â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="appointment_complete"){
         ab("Create Return Label",C.cyan,()=>createReturnLabel(cs));
         if(cs.returnShipment?.trackingNumber)
           ab("Mark Awaiting Return",C.red,()=>caseAction(cs.id,"awaiting_return"));
       }
-      // ── Step 10: Mark Returned (awaiting_return → returned) ───────────────
+      // â”€â”€ Step 10: Mark Returned (awaiting_return â†’ returned) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="awaiting_return"){
         ab("Send Return Reminder",C.amber,()=>sendRefreshEmail(cs,"return_reminder"));
         ab("Mark Returned",C.cyan,()=>caseAction(cs.id,"returned"));
       }
-      // ── Step 11: Complete Case (returned → completed → closed) ────────────
+      // â”€â”€ Step 11: Complete Case (returned â†’ completed â†’ closed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if(cs.status==="returned")
         ab("Complete Case",C.green,()=>caseAction(cs.id,"completed"));
       if(cs.status==="completed")
@@ -3718,7 +3780,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
       <button onClick={()=>{setTab("create");setForm(initForm);if(onConsumePrefill)onConsumePrefill();}} style={{padding:"6px 14px",borderRadius:6,border:"none",background:tab==="create"?C.accent:C.green,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Create Case</button>
     </div>
 
-    {/* â•â•â•â•â•â• QUEUE â•â•â•â•â•â• */}
+    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â QUEUE Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
     {tab==="queue"&&(<>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         <Kpi label="Total" value={cases.length} color={C.accent}/><Kpi label="Open" value={openCases} color={C.amber}/><Kpi label="Overdue" value={overdueCases} color={C.red} alert={overdueCases>0}/>
@@ -3737,7 +3799,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
             <tbody>{pageData.length===0&&<tr><td colSpan={9} style={{padding:28,textAlign:"center",color:C.muted}}>No cases match the current filters.</td></tr>}
               {pageData.map((cs,i)=>(<tr key={cs.id} onClick={()=>setSel(sel===cs.id?null:cs.id)} style={{cursor:"pointer"}}><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><span style={{fontFamily:MN,fontSize:10.5,color:C.accent,fontWeight:600}}>{cs.id}</span></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CTChip t={cs.type}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:12,fontWeight:500}}>{cs.userId||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:cs.assetId?C.sub:C.light}}>{cs.assetId||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CSChip s={cs.status}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt}}><CPChip p={cs.priority}/></td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontSize:11,color:cs.tech?C.sub:C.light}}>{cs.tech||"\u2014"}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:C.sub}}>{cs.created}</td><td style={{padding:"6px 8px",borderBottom:`1px solid ${C.borderLight}`,background:sel===cs.id?C.accentSoft:i%2===0?C.surface:C.surfaceAlt,fontFamily:MN,fontSize:10.5,color:cs.due&&new Date(cs.due+"T00:00:00")<new Date()&&!["completed","closed","canceled","rejected"].includes(cs.status)?C.red:C.sub}}>{cs.due||"\u2014"}</td></tr>))}</tbody></table>
         </div>
-        {/* â”€â”€ CASE DETAIL DRAWER â”€â”€ */}
+        {/* Ã¢â€â‚¬Ã¢â€â‚¬ CASE DETAIL DRAWER Ã¢â€â‚¬Ã¢â€â‚¬ */}
         {det&&(<div style={{width:400,flexShrink:0,background:C.surface,borderRadius:"0 8px 8px 0",border:`1px solid ${C.border}`,borderLeft:"none",boxShadow:C.shadowMd,overflow:"auto",maxHeight:"calc(100vh - 440px)"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{display:"flex",justifyContent:"space-between"}}><div><span style={{fontFamily:MN,fontSize:14,color:C.accent,fontWeight:700}}>{det.id}</span><div style={{fontSize:13,fontWeight:600,marginTop:3}}>{det.userId||"No user"}</div><div style={{marginTop:5,display:"flex",gap:5,flexWrap:"wrap"}}><CTChip t={det.type}/><CSChip s={det.status}/><CPChip p={det.priority}/></div></div><button onClick={()=>setSel(null)} style={{width:24,height:24,borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.muted,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{"\u00D7"}</button></div></div>
           {/* Operational actions */}
@@ -3752,12 +3814,12 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
             <input value={replacementSearchDrawer} onChange={e=>setReplacementSearchDrawer(e.target.value)} placeholder="Search available inventory by tag or model" style={{...inp,marginBottom:8}}/>
             <select value={replacementDraft} onChange={e=>setReplacementDraft(e.target.value)} style={inp}>
               <option value="">No replacement selected</option>
-              {drawerReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} · {asset.model} · {asset.office}</option>)}
+              {drawerReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} Â· {asset.model} Â· {asset.office}</option>)}
             </select>
             {drawerReplacementOptions.length===0&&<div style={{fontSize:10.5,color:C.muted,marginTop:6}}>No eligible inventory assets are currently available for this refresh case.</div>}
             {selectedDrawerReplacement&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:6,background:C.panel,border:`1px solid ${C.border}`}}>
-              <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedDrawerReplacement.tag} · {selectedDrawerReplacement.model}</div>
-              <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedDrawerReplacement.office} · {REG_ST[selectedDrawerReplacement.status]?.l||selectedDrawerReplacement.status}</div>
+              <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedDrawerReplacement.tag} Â· {selectedDrawerReplacement.model}</div>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedDrawerReplacement.office} Â· {REG_ST[selectedDrawerReplacement.status]?.l||selectedDrawerReplacement.status}</div>
             </div>}
             <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
               <button onClick={()=>saveCaseReplacement(det,replacementDraft)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.purpleBorder}`,background:C.purpleSoft,color:C.purple,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>{det.replacementId?"Update Reservation":"Reserve Replacement"}</button>
@@ -3766,7 +3828,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
           </div>}
           {det.type==="refresh"&&<div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",marginBottom:10}}>SHIPMENT LABELS</div>
-            {/* ── Outbound label panel ── */}
+            {/* â”€â”€ Outbound label panel â”€â”€ */}
             {(()=>{
               const ob=det.outboundShipment||NULL_SHIPMENT;
               const obSt=LABEL_STATUS[ob.labelStatus||"none"];
@@ -3775,14 +3837,14 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
               return (
                 <div style={{marginBottom:10,padding:"10px 12px",borderRadius:7,border:`1px solid ${C.border}`,background:C.panel}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2197"} Outbound Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(replacement → user)</span></div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2197"} Outbound Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(replacement â†’ user)</span></div>
                     <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:obSt.c||C.muted,background:obSt.bg||"transparent",fontFamily:MN}}>{obSt.l}</span>
                   </div>
                   {hasLabel&&<div style={{marginBottom:6}}>
                     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                       <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TRACKING #</div><span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600}}>{ob.trackingNumber}</span></div>
                       <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>SERVICE</div><span style={{fontSize:11,color:C.sub}}>{ob.serviceType}</span></div>
-                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TO</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ob.recipientAddress||"—"}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TO</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ob.recipientAddress||"â€”"}</span></div>
                     </div>
                     {ob.createdAt&&<div style={{fontSize:9.5,color:C.muted,marginTop:4}}>Created {ob.createdAt} by {ob.createdBy}</div>}
                     {isVoided&&ob.voidedAt&&<div style={{fontSize:9.5,color:C.red,marginTop:2}}>Voided {ob.voidedAt} by {ob.voidedBy}</div>}
@@ -3795,7 +3857,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
                 </div>
               );
             })()}
-            {/* ── Return label panel ── */}
+            {/* â”€â”€ Return label panel â”€â”€ */}
             {(()=>{
               const ret=det.returnShipment||NULL_SHIPMENT;
               const retSt=LABEL_STATUS[ret.labelStatus||"none"];
@@ -3804,14 +3866,14 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
               return (
                 <div style={{marginBottom:10,padding:"10px 12px",borderRadius:7,border:`1px solid ${C.border}`,background:C.panel}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2198"} Return Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(old device → warehouse)</span></div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.text}}>{"\u2198"} Return Label <span style={{fontSize:9.5,color:C.muted,fontWeight:400}}>(old device â†’ warehouse)</span></div>
                     <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,color:retSt.c||C.muted,background:retSt.bg||"transparent",fontFamily:MN}}>{retSt.l}</span>
                   </div>
                   {hasLabel&&<div style={{marginBottom:6}}>
                     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                       <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>TRACKING #</div><span style={{fontFamily:MN,fontSize:11,color:C.accent,fontWeight:600}}>{ret.trackingNumber}</span></div>
                       <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>SERVICE</div><span style={{fontSize:11,color:C.sub}}>{ret.serviceType}</span></div>
-                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>FROM</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ret.shipFromAddress||"—"}</span></div>
+                      <div><div style={{fontSize:9,color:C.muted,fontFamily:MN,marginBottom:2}}>FROM</div><span style={{fontSize:11,color:C.sub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{ret.shipFromAddress||"â€”"}</span></div>
                     </div>
                     {ret.createdAt&&<div style={{fontSize:9.5,color:C.muted,marginTop:4}}>Created {ret.createdAt} by {ret.createdBy}</div>}
                     {isVoided&&ret.voidedAt&&<div style={{fontSize:9.5,color:C.red,marginTop:2}}>Voided {ret.voidedAt} by {ret.voidedBy}</div>}
@@ -3824,7 +3886,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
                 </div>
               );
             })()}
-            {/* ── Appointment + execution fields ── */}
+            {/* â”€â”€ Appointment + execution fields â”€â”€ */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginTop:4}}>
               <FF label="Appointment Date/Time"><input type="datetime-local" value={refreshExecDraft.appointmentDate} onChange={e=>setRefreshExecDraft(d=>({...d,appointmentDate:e.target.value}))} style={inp}/></FF>
               <FF label="Appointment Status"><select value={refreshExecDraft.appointmentStatus} onChange={e=>setRefreshExecDraft(d=>({...d,appointmentStatus:e.target.value}))} style={inp}>{Object.entries(APPT_STAT).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
@@ -3852,7 +3914,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
             </div>
             <FF label="Intake Notes"><textarea value={returnIntakeDraft.intakeNotes} onChange={e=>setReturnIntakeDraft(d=>({...d,intakeNotes:e.target.value}))} rows={2} placeholder="Condition, accessories, damage, and intake notes" style={{...inp,marginTop:8,resize:"vertical",fontFamily:SN}}/></FF>
             <FF label="Disposition" w="100%"><select value={returnIntakeDraft.intakeDisposition} onChange={e=>setReturnIntakeDraft(d=>({...d,intakeDisposition:e.target.value}))} style={inp}>{Object.entries(INTAKE_DISP).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></FF>
-            <div style={{fontSize:10.5,color:C.muted,marginTop:8}}>Original asset: <strong style={{color:C.text}}>{det.assetId||"—"}</strong></div>
+            <div style={{fontSize:10.5,color:C.muted,marginTop:8}}>Original asset: <strong style={{color:C.text}}>{det.assetId||"â€”"}</strong></div>
             <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
               <button onClick={()=>markCaseReturnReceived(det)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.cyanBorder}`,background:C.cyanSoft,color:C.cyan,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Mark Return Received</button>
               <button onClick={()=>completeReturnIntake(det,"inventory")} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.greenBorder}`,background:C.greenSoft,color:C.green,fontSize:10.5,fontWeight:600,cursor:"pointer"}}>Check In to Inventory</button>
@@ -3874,7 +3936,7 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
       </div>
     </>)}
 
-    {/* â•â•â•â•â•â• CREATE CASE FORM â•â•â•â•â•â• */}
+    {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â CREATE CASE FORM Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
     {tab==="create"&&(<div style={{maxWidth:700}}><div style={{background:C.surface,borderRadius:10,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}><div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,background:C.panel}}><div style={{fontSize:14,fontWeight:700}}>Create New Case</div></div><div style={{padding:"16px 20px"}}>
       <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{Object.entries(CASE_TYPES).map(([k,v])=>(<button key={k} onClick={()=>setForm(f=>({...f,type:k}))} style={{padding:"8px 14px",borderRadius:6,border:`1px solid ${form.type===k?v.c:C.border}`,background:form.type===k?v.bg:C.surface,color:form.type===k?v.c:C.sub,fontSize:12,fontWeight:600,cursor:"pointer"}}>{v.icon} {v.l}</button>))}</div>
       <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}><FF label="Priority"><select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={inp}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></FF><FF label="Due Date"><input type="date" value={form.due} onChange={e=>setForm(f=>({...f,due:e.target.value}))} style={inp}/></FF></div>
@@ -3886,12 +3948,12 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
         <input value={replacementSearchCreate} onChange={e=>setReplacementSearchCreate(e.target.value)} placeholder="Search available inventory by tag or model" style={{...inp,marginBottom:8}}/>
         <select value={form.replacementId} onChange={e=>setForm(f=>({...f,replacementId:e.target.value}))} style={inp}>
           <option value="">No replacement selected</option>
-          {formReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} · {asset.model} · {asset.office}</option>)}
+          {formReplacementOptions.map(asset=><option key={asset.tag} value={asset.tag}>{asset.tag} Â· {asset.model} Â· {asset.office}</option>)}
         </select>
         {formReplacementOptions.length===0&&<div style={{fontSize:10.5,color:C.muted,marginTop:6}}>No eligible inventory assets are currently available for reservation.</div>}
         {selectedFormReplacement&&<div style={{marginTop:8,padding:"8px 10px",borderRadius:6,background:C.surface,border:`1px solid ${C.border}`}}>
-          <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedFormReplacement.tag} · {selectedFormReplacement.model}</div>
-          <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedFormReplacement.office} · {REG_ST[selectedFormReplacement.status]?.l||selectedFormReplacement.status}</div>
+          <div style={{fontSize:11.5,fontWeight:600,color:C.text}}>{selectedFormReplacement.tag} Â· {selectedFormReplacement.model}</div>
+          <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{selectedFormReplacement.office} Â· {REG_ST[selectedFormReplacement.status]?.l||selectedFormReplacement.status}</div>
         </div>}
         {form.replacementId&&<div style={{marginTop:8}}><button onClick={()=>setForm(f=>({...f,replacementId:""}))} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,fontWeight:500,cursor:"pointer"}}>Clear Replacement</button></div>}
       </div>}
@@ -3925,18 +3987,18 @@ function CaseManagementModule({setToast,go,cases,setCases,prefill,selectedCaseId
 function Placeholder({id,goHome}){const it=navLookupAll[id];return (<div style={{maxWidth:500,margin:"80px auto",textAlign:"center"}}><div style={{width:52,height:52,borderRadius:12,background:C.graySoft,border:`1px solid ${C.grayBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,margin:"0 auto 16px"}}>{it?.icon||navLookupAll[it?.parentId||""]?.icon||"\u2699"}</div><h2 style={{fontSize:18,fontWeight:700,margin:"0 0 8px"}}>{it?.label||id}</h2><p style={{fontSize:13,color:C.sub}}>This module is planned for a future phase.</p><button onClick={goHome} style={{marginTop:16,padding:"8px 20px",borderRadius:6,border:"none",background:C.accent,color:"#FFF",fontSize:12,fontWeight:600,cursor:"pointer"}}>Back to Command Center</button></div>);}
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // AMS REGISTRY IMPORT PIPELINE
-// CSV upload â†’ Parse â†’ Normalize â†’ Validate â†’ Stage â†’ Promote to Live
+// CSV upload Ã¢â€ â€™ Parse Ã¢â€ â€™ Normalize Ã¢â€ â€™ Validate Ã¢â€ â€™ Stage Ã¢â€ â€™ Promote to Live
 // Promotion gate: promotion is blocked if any row has a hard validation error.
 // Hard validation rules (block promotion): missing AssetsID, blank Status,
 // duplicate AssetsID, duplicate SerialNumber, unknown status, invalid date.
 // Warning-only (do not block): SerialNumber same as ID/blank, blank model,
 // assigned but no user, missing warranty/RAM.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
-// â”€â”€â”€ STATUS MAPPING: AMS Status values â†’ internal platform statuses â”€â”€â”€â”€â”€â”€â”€
-// Hard validation: blank status blocks promotion. Unknown status â†’ raw_unknown_status (preserved in _rawStatus for audit).
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ STATUS MAPPING: AMS Status values Ã¢â€ â€™ internal platform statuses Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Hard validation: blank status blocks promotion. Unknown status Ã¢â€ â€™ raw_unknown_status (preserved in _rawStatus for audit).
 // Map keys are normalized (trimmed, case-insensitive lookup).
 const AMS_STATUS_MAP_RAW={
   "Assigned":"assigned","Available":"inventory","Refurbished":"inventory","Repair":"repair",
@@ -3959,7 +4021,7 @@ function normalizeStatus(raw){
   return mapped!==undefined?mapped:"raw_unknown_status";
 }
 
-// â”€â”€â”€ RAM NORMALIZATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RAM NORMALIZATION Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const normalizeRam=(raw)=>{
   if(!raw)return "\u2014";
   const s=String(raw).trim().replace(/\s*GB$/i,"");
@@ -3967,7 +4029,7 @@ const normalizeRam=(raw)=>{
   return Number.isFinite(n)&&n>0?n+"GB":"\u2014";
 };
 
-// â”€â”€â”€ DATE NORMALIZATION (AMS normalization assumptions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ DATE NORMALIZATION (AMS normalization assumptions) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // No locale-dependent new Date(s) for ambiguous formats. Supported: ISO date-only, ISO timestamp, MM/DD/YYYY (explicit pattern).
 // Returns null for invalid or ambiguous input; do not silently reinterpret.
 function isValidYmd(year,month,day){
@@ -4022,7 +4084,7 @@ function normalizeDate(raw){
 }
 function normalizeDateDisplay(raw){const v=normalizeDate(raw);return v==null||v===""?"\u2014":v;}
 
-// â”€â”€â”€ WARRANTY STATUS from expiry date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WARRANTY STATUS from expiry date Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const warrantyStatus=(we)=>{
   if(!we||we==="\u2014")return "\u2014";
   const d=new Date(we+"T00:00:00");if(Number.isNaN(d.getTime()))return "\u2014";
@@ -4030,7 +4092,7 @@ const warrantyStatus=(we)=>{
   if(diff<0)return "expired";if(diff<=90)return "expiring";return "active";
 };
 
-// â”€â”€â”€ LOCATION NORMALIZATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ LOCATION NORMALIZATION Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const normalizeLocation=(raw)=>{
   if(!raw||!raw.trim())return "\u2014";
   return raw.replace(/- /g,"- ").replace(/\s+/g," ").trim();
@@ -4040,7 +4102,7 @@ const duplicateRowSignature=(row)=>JSON.stringify([
   row.id,row.sn,row.model,row.status,row.user,row.office,row.pd,row.we,row.leaseNum,row.ram,row.vendor,row.notes,row.shipAddr
 ]);
 
-// â”€â”€â”€ VENDOR INFERENCE from model name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ VENDOR INFERENCE from model name Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const inferVendor=(model)=>{
   if(!model)return "\u2014";
   const m=model.toLowerCase();
@@ -4052,7 +4114,7 @@ const inferVendor=(model)=>{
   return "\u2014";
 };
 
-// â”€â”€â”€ CSV PARSER (handles quoted fields, newlines in fields) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CSV PARSER (handles quoted fields, newlines in fields) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const parseCSV=(text)=>{
   const rows=[];let row=[];let field="";let inQuote=false;
   for(let i=0;i<text.length;i++){
@@ -4064,7 +4126,7 @@ const parseCSV=(text)=>{
   return rows;
 };
 
-// â”€â”€â”€ NORMALIZE one AMS CSV row â†’ internal asset record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ NORMALIZE one AMS CSV row Ã¢â€ â€™ internal asset record Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // AMS field mapping: AssetsID, AssetsName, AssetsType, Category, Status, AssetsLocation, AssignedTo,
 // AssignedDate, WarrantyExpiryDate, Notes, AssetModelNumber, SerialNumber, ShippingAddress, LeaseNumber, Ram.
 const AMS_HEADER_ALIASES={
@@ -4133,14 +4195,14 @@ const normalizeAmsRow=(headers,vals)=>{
     _rawStatus:rawStatus,
     _rawWe:get("WarrantyExpiryDate"),_rawPd:get("AssignedDate"),
   };
-  // Derive rf flag: true if warranty/lease ≤ 90d away or already expired, and asset is active
+  // Derive rf flag: true if warranty/lease â‰¤ 90d away or already expired, and asset is active
   const activeStatuses=["assigned","pending_refresh","refresh_scheduled"];
   const rfDays=weNorm?(Math.floor((new Date(weNorm+"T00:00:00")-new Date())/(1000*60*60*24))):null;
   row.rf=activeStatuses.includes(row.status)&&rfDays!==null&&rfDays<=90;
   return row;
 };
 
-// â”€â”€â”€ VALIDATION ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ VALIDATION ENGINE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // All normalized rows are validated (including rows missing AssetsID). Summary is based on full input.
 // Hard validation rules (block promotion): missing AssetsID, blank Status, duplicate AssetsID,
 // duplicate SerialNumber, unknown status, invalid date.
@@ -4386,7 +4448,7 @@ const normalizeRefreshImportRow=(headers,vals,assets=[])=>{
     returnShipment:{...NULL_SHIPMENT},
     events:[
       {ts:modifiedAt||createdAt||nowTs(),type:"created",by:createdBy||modifiedBy||"Refresh Schedule Import",detail:`Imported refresh schedule row${sourceId?` ${sourceId}`:""}`},
-      {ts:modifiedAt||createdAt||nowTs(),type:"note",by:"Refresh Schedule Import",detail:`Source status: ${rawStatus||"—"}${startAt?` · Start: ${startAt}`:""}${technician?` · Tech: ${technician}`:""}`},
+      {ts:modifiedAt||createdAt||nowTs(),type:"note",by:"Refresh Schedule Import",detail:`Source status: ${rawStatus||"â€”"}${startAt?` Â· Start: ${startAt}`:""}${technician?` Â· Tech: ${technician}`:""}`},
     ],
     importSource:{type:"refresh_schedule",sourceId,rawStatus,oldSerial:rawOldSerial,newSerial:rawNewSerial,employeeEmail,employeePhone,operatingCompany,location:rawLocation,tracking:trackingRaw,shippingAddress,modifiedAt,createdAt,modifiedBy,createdBy},
     appointmentTitle,
@@ -4447,7 +4509,7 @@ const validateRefreshImportChunked=async(rows,existingCases,onProgress)=>{
       const signature=refreshDuplicateSignature(row);
       if(signature.replace(/\|/g,"")!==""){
         if(seen.has(signature)){
-          warnings.push({row:line,field:"Duplicate",msg:`Duplicate row rejected from staging (${row.userId||"Unknown"} · ${row.appointmentDate||"No start"} · ${row.rawOldSerial||row.rawNewSerial||"No serial"})`});
+          warnings.push({row:line,field:"Duplicate",msg:`Duplicate row rejected from staging (${row.userId||"Unknown"} Â· ${row.appointmentDate||"No start"} Â· ${row.rawOldSerial||row.rawNewSerial||"No serial"})`});
           skippedRows.add(line);
         }else{
           seen.set(signature,line);
@@ -4503,7 +4565,7 @@ const toPromotedRefreshCase=(row)=>({
   importSource:{...(row.importSource||{})},
 });
 
-// â”€â”€â”€ AMS IMPORT MODULE (UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AMS IMPORT MODULE (UI) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivity,setAssetActivity,prePromoteActivityRef,onResetToDemo}){
   const [stage,setStage]=useState("upload");// upload|parsing|staging|promoted
   const [staging,setStaging]=useState([]);
@@ -4621,7 +4683,7 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
   useEffect(()=>{setPreviewPage(p=>Math.min(p,totalPages-1));},[totalPages]);
 
   return (<>
-    {/* â”€â”€ UPLOAD STAGE â”€â”€ */}
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ UPLOAD STAGE Ã¢â€â‚¬Ã¢â€â‚¬ */}
     {stage==="upload"&&(<div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
       <div style={{width:56,height:56,borderRadius:14,background:C.accentSoft,border:`1px solid ${C.accentBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.accent}}>{"\u2B06"}</div>
       <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>AMS Registry Import</h2>
@@ -4640,14 +4702,14 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
       </div>}
     </div>)}
 
-    {/* â”€â”€ PARSING STAGE â”€â”€ */}
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ PARSING STAGE Ã¢â€â‚¬Ã¢â€â‚¬ */}
     {stage==="parsing"&&(<div style={{maxWidth:500,margin:"60px auto",textAlign:"center"}}>
       <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Parsing {fileName}...</div>
       <div style={{width:"100%",height:6,background:C.panel,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${parseProgress}%`,background:C.accent,borderRadius:3,transition:"width 0.3s"}}/></div>
       <div style={{fontSize:11,color:C.muted,marginTop:8}}>{parseProgress}%</div>
     </div>)}
 
-    {/* â”€â”€ STAGING STAGE â”€â”€ */}
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ STAGING STAGE Ã¢â€â‚¬Ã¢â€â‚¬ */}
     {stage==="staging"&&validation&&(<>
       <SH color={C.accent} badge="Import Staging">AMS Import Summary</SH>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
@@ -4696,7 +4758,7 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11,color:C.sub}}>{a.cat}</td>
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel}}><RStChip s={a.status}/></td>
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.office}</td>
-              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11}}>{a.user||"—"}</td>
+              <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:11}}>{a.user||"â€”"}</td>
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10,color:C.sub}}>{a.we}</td>
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{a.ram}</td>
               <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:9.5,color:C.muted,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.leaseNum}</td>
@@ -4711,7 +4773,7 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
           <button onClick={()=>setPreviewPage(p=>Math.min(totalPages-1,p+1))} disabled={previewPage>=totalPages-1} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:previewPage>=totalPages-1?C.muted:C.text,fontSize:11,cursor:previewPage>=totalPages-1?"default":"pointer"}}>Next {"\u2192"}</button>
         </div>
       </div>
-      {/* Actions: promotion gate — Promote disabled when there are hard validation errors */}
+      {/* Actions: promotion gate â€” Promote disabled when there are hard validation errors */}
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={promote} disabled={hasHardErrors} style={{padding:"8px 24px",borderRadius:6,border:"none",background:hasHardErrors?C.muted:C.green,color:"#FFF",fontSize:13,fontWeight:600,cursor:hasHardErrors?"not-allowed":"pointer"}}>Promote to Live Registry ({staging.length.toLocaleString()} assets)</button>
         <button onClick={()=>resetImportState("upload")} style={{padding:"8px 20px",borderRadius:6,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
@@ -4722,7 +4784,7 @@ function AmsImportModule({setToast,assets,setAssets,go,prePromoteRef,assetActivi
       </div>}
     </>)}
 
-    {/* â”€â”€ PROMOTED STAGE â”€â”€ */}
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ PROMOTED STAGE Ã¢â€â‚¬Ã¢â€â‚¬ */}
     {stage==="promoted"&&(<div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
       <div style={{width:56,height:56,borderRadius:14,background:C.greenSoft,border:`1px solid ${C.greenBorder}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 16px",color:C.green}}>{"\u2713"}</div>
       <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 6px"}}>Import Complete</h2>
@@ -4896,7 +4958,7 @@ function RefreshScheduleImportModule({setToast,assets,cases,setCases,go,onResetT
             <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.locationId||row.operatingCompany||"\u2014"}</td>
             <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{row.assetId||row.rawOldSerial||"\u2014"}</td>
             <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontFamily:MN,fontSize:10}}>{row.replacementId||row.rawNewSerial||"\u2014"}</td>
-            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub}}>{row.assetLinked||row.replacementLinked?[row.assetLinked?"Current asset linked":"",row.replacementLinked?"Replacement linked":""].filter(Boolean).join(" · "):"Serials kept as review context"}</td>
+            <td style={{padding:"5px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2===0?C.surface:C.panel,fontSize:10.5,color:C.sub}}>{row.assetLinked||row.replacementLinked?[row.assetLinked?"Current asset linked":"",row.replacementLinked?"Replacement linked":""].filter(Boolean).join(" Â· "):"Serials kept as review context"}</td>
           </tr>))}</tbody>
         </table>
       </div>
@@ -4944,9 +5006,9 @@ function DataImportModule(props){
 }
 
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ MAIN Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ MAIN ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 export default function ITAMPlatform(){
-  const currentRole="Admin";
+  const [currentRole,setCurrentRole]=useState("Manager");
   const [nav,setNav]=useState("refresh.command");
   const [hover,setHover]=useState(null);
   const [toast,setToast]=useState(null);
@@ -5076,7 +5138,7 @@ export default function ITAMPlatform(){
       <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>{`:root{--bg:#060d1f;--surface-1:#121c36;--surface-2:#182547;--text-primary:#eaf1ff;--text-secondary:#a8b7d2;--muted:#7f92b8;--border:rgba(129,156,214,0.18);--border-subtle:rgba(129,156,214,0.12);--shadow-1:0 8px 20px rgba(2,8,20,0.34);--shadow-2:0 14px 36px rgba(2,8,20,0.50);--card-shadow:0 14px 30px rgba(2,8,20,0.44);--card-highlight:rgba(181,203,255,0.08);--chart-grid:rgba(140,166,220,0.16);--chart-axis:#9cb0d7;--card-radius:14px;--card-padding:14px 16px;--accent:#4f8cff;--success:#1dd4a3;--warning:#f4b740;--error:#ff5d6c;}[data-theme="dark"]{--bg:#060d1f;--surface-1:#121c36;--surface-2:#182547;--text-primary:#eaf1ff;--text-secondary:#a8b7d2;--muted:#7f92b8;--border:rgba(129,156,214,0.18);--border-subtle:rgba(129,156,214,0.12);--shadow-1:0 8px 20px rgba(2,8,20,0.34);--shadow-2:0 14px 36px rgba(2,8,20,0.50);--card-shadow:0 14px 30px rgba(2,8,20,0.44);--card-highlight:rgba(181,203,255,0.08);--chart-grid:rgba(140,166,220,0.16);--chart-axis:#9cb0d7;--card-radius:14px;--card-padding:14px 16px;--accent:#4f8cff;--success:#1dd4a3;--warning:#f4b740;--error:#ff5d6c;}[data-theme="light"]{--bg:#f6f8fd;--surface-1:#ffffff;--surface-2:#f3f6fc;--text-primary:#111827;--text-secondary:#4b5563;--muted:#6b7280;--border:rgba(148,163,184,0.24);--border-subtle:rgba(148,163,184,0.18);--shadow-1:0 1px 2px rgba(0,0,0,0.04);--shadow-2:0 4px 16px rgba(0,0,0,0.08);--card-shadow:0 6px 18px rgba(15,23,42,0.10);--card-highlight:rgba(255,255,255,0.85);--chart-grid:rgba(148,163,184,0.2);--chart-axis:#64748b;--card-radius:14px;--card-padding:14px 16px;--accent:#2563eb;--success:#059669;--warning:#d97706;--error:#dc2626;}*{box-sizing:border-box}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${C.borderHeavy};border-radius:3px}table{border-spacing:0}tbody tr:hover td{background:${C.hover} !important}select{appearance:auto}`}</style>
 
-      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â SIDEBAR Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+      {/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â SIDEBAR ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */}
       <nav style={{width:220,flexShrink:0,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh",overflowY:"auto",zIndex:10}}>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:26,height:26,borderRadius:5,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#FFF",fontSize:11,fontWeight:700,fontFamily:MN}}>IT</div><div><div style={{fontSize:12.5,fontWeight:700,letterSpacing:"-0.02em"}}>ITAM Platform</div><div style={{fontSize:9,color:C.muted,fontFamily:MN}}>Asset Management</div></div></div></div>
         <div style={{padding:"8px 8px",flex:1}}>
@@ -5105,11 +5167,17 @@ export default function ITAMPlatform(){
         <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.chartAxis,fontFamily:MN}}><div>AMS sync: 3 min ago</div><div>Inventory: Mar 6, 2026</div></div>
       </nav>
 
-      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â MAIN Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+      {/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â MAIN ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */}
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,height:"100vh",overflow:"hidden"}}>
         <header style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:C.shadow,flexShrink:0}}>
           <div><div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span onClick={()=>goSafe("refresh.command")} style={{fontSize:10.5,color:C.accent,fontWeight:500,cursor:"pointer"}}>ITAM Platform</span><span style={{fontSize:10,color:C.light}}>/</span><span style={{fontSize:10.5,color:C.text,fontWeight:600}}>{crumb}</span></div><div style={{fontSize:14,fontWeight:700,letterSpacing:"-0.02em"}}>{pageTitle}</div></div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:C.panel}}>
+              <span style={{fontSize:9,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>Prototype Role</span>
+              <select value={currentRole} onChange={e=>setCurrentRole(e.target.value)} style={{padding:"3px 6px",borderRadius:4,border:`1px solid ${C.border}`,background:C.surface,color:C.text,fontSize:11,fontWeight:600,fontFamily:SN,cursor:"pointer"}}>
+                {NAV_ROLES.map(role=><option key={role} value={role}>{role}</option>)}
+              </select>
+            </div>
             <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>{theme==="dark"?"Light Mode":"Dark Mode"}</button>
             <button onClick={()=>setToast("Exporting\u2026")} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>Export</button>
             {nav.startsWith("refresh")&&<button onClick={()=>setToast("New case dialog\u2026")} style={{padding:"5px 10px",borderRadius:5,border:"none",background:C.accent,color:"#FFF",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ New Case</button>}
@@ -5128,12 +5196,12 @@ export default function ITAMPlatform(){
           {(nav==="inventory.stock"||nav==="inventory.bookings")&&<InventoryModule setToast={setToast} currentNav={nav} assets={assets}/>}
           {nav==="onboarding"&&<OnboardingModule setToast={setToast} go={goSafe} auditEvents={auditEvents} setAuditEvents={setAuditEvents}/>}
           {nav==="offboarding"&&<OffboardingModule setToast={setToast} go={goSafe}/>}
-          {nav==="returns"&&<ReturnQueueModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
+          {nav==="returns"&&<ReturnQueueModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase} cases={cases}/>}
           {nav==="returns.lease"&&<Placeholder id="returns.lease" goHome={goHome}/>}
           {nav==="breakfix"&&<BreakFixModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase}/>}
           {nav==="refresh.command"&&<CommandView go={goSafe} cases={cases}/>}
           {nav==="refresh.queue"&&<QueueView go={goSafe} cases={cases} onOpenCase={openCaseFromAsset} onOpenAsset={openAssetFromCase}/>}
-          {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=cases.filter(c=>c.tech===t.name&&!["closed","checked_in"].includes(c.status));return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
+          {nav==="refresh.techs"&&<>{TECHS.map(t=>{const ac=getRefreshAppointmentWorkload(cases).filter(row=>row.tech===t.name);return (<div key={t.id} style={{background:C.surface,borderRadius:8,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:15,fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:C.muted}}>{t.role} {"\u00B7"} {t.home}</div></div>{t.travel&&t.trip&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.purpleSoft,color:C.purple,fontFamily:MN,fontWeight:600}}>{t.trip}</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,textAlign:"center"}}>{[{l:"Active",v:ac.length,c:C.amber},{l:"Capacity",v:t.cap,c:C.sub},{l:"Avg Min",v:t.avg,c:C.sub}].map((m,i)=>(<div key={i}><div style={{fontSize:18,fontWeight:700,color:m.c,fontFamily:SN}}>{m.v}</div><div style={{fontSize:8.5,color:C.muted,fontFamily:MN}}>{m.l}</div></div>))}</div></div>);})}</>}
           {nav==="refresh.waves"&&<WavePlannerModule setToast={setToast} go={goSafe} cases={cases}/>}
 {(nav==="cases"||nav==="cases.all"||nav==="cases.create")&&<CaseManagementModule setToast={setToast} go={goSafe} cases={cases} setCases={setCases} prefill={casePrefill} selectedCaseId={caseSelection} onConsumeSelection={clearCaseSelection} onConsumePrefill={clearCasePrefill} onCaseTransition={onCaseTransition} currentNav={nav} onOpenAsset={openAssetFromCase} assets={assets} onUpdateAsset={updateAssetByTag}/>}
           {nav==="registry"&&<AssetRegistryModule setToast={setToast} assets={assets} cases={cases} setCasePrefill={setCasePrefill} onOpenCase={openCaseFromAsset} go={goSafe} selectedAssetTag={selectedAssetTag} onClearAssetSelection={clearAssetSelection} onUpdateAsset={updateAssetByTag} assetActivity={assetActivity}/>}
@@ -5148,3 +5216,4 @@ export default function ITAMPlatform(){
     </div>
   );
 }
+

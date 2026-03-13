@@ -27,7 +27,7 @@ const EXTRA = {
   "Isaiah Gourdine": { inc: 623, incSince: "Jan 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
   "Michael Girardi": { inc: 133, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 2612, onSince: "Feb 2024" },
   "Jon Dinh": { inc: 429, incSince: "Feb 2024", offboard: 1332, offSince: "Feb 2024", onboard: 0, onSince: "" },
-  "Jonathan Gamble": { inc: 435, incSince: "Oct 2023", offboard: 0, offSince: "", onboard: 0, onSince: "" },
+  "Jonathan Gamble": { inc: 435, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
 };
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
