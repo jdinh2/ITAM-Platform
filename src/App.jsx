@@ -42,8 +42,16 @@ import {
 const C={bg:"var(--bg)",surface:"var(--surface-1)",surfaceAlt:"var(--surface-2)",hover:"var(--surface-2)",active:"var(--surface-2)",panel:"var(--surface-2)",border:"var(--border)",borderLight:"var(--border-subtle)",borderHeavy:"var(--border-subtle)",text:"var(--text-primary)",sub:"var(--text-secondary)",muted:"var(--muted)",light:"var(--muted)",accent:"var(--accent)",accentSoft:"rgba(79,140,255,0.14)",accentBorder:"rgba(79,140,255,0.45)",green:"var(--success)",greenSoft:"rgba(29,212,163,0.14)",greenBorder:"rgba(29,212,163,0.45)",amber:"var(--warning)",amberSoft:"rgba(244,183,64,0.14)",amberBorder:"rgba(244,183,64,0.45)",red:"var(--error)",redSoft:"rgba(255,93,108,0.14)",redBorder:"rgba(255,93,108,0.45)",purple:"#9d7dff",purpleSoft:"rgba(157,125,255,0.14)",purpleBorder:"rgba(157,125,255,0.45)",cyan:"#35c9ff",cyanSoft:"rgba(53,201,255,0.14)",cyanBorder:"rgba(53,201,255,0.45)",orange:"#ff9f43",orangeSoft:"rgba(255,159,67,0.14)",orangeBorder:"rgba(255,159,67,0.45)",gray:"#8ea2c9",graySoft:"rgba(142,162,201,0.16)",grayBorder:"rgba(142,162,201,0.35)",shadow:"var(--shadow-1)",shadowMd:"var(--card-shadow)",innerHighlight:"var(--card-highlight)",chartGrid:"var(--chart-grid)",chartAxis:"var(--chart-axis)"};
 const MN="'Geist Mono','SF Mono',monospace";
 const SN="'Geist',-apple-system,BlinkMacSystemFont,sans-serif";
-const NAV_ROLES=["Executive","Manager","Technician"];
-const ROLE_DEFAULT_NAV={Executive:"executive",Manager:"refresh.command",Technician:"refresh.queue"};
+const NAV_ROLES=["Admin","Technician"];
+const ROLE_DEFAULT_NAV={Admin:"executive",Technician:"refresh.queue"};
+const PERSONAS=[
+  {id:"jesse_hall",name:"Jesse Hall",tier:"Admin"},
+  {id:"josh_street",name:"Josh Street",tier:"Admin"},
+  {id:"simon_ford",name:"Simon Ford",tier:"Admin"},
+  {id:"jon_dinh",name:"Jon Dinh",tier:"Admin"},
+  {id:"micah_harris",name:"Micah Harris",tier:"Admin"},
+  {id:"technicians",name:"Technicians",tier:"Technician"},
+];
 const IS_DEV=(typeof window!=="undefined"&&/^(localhost|127\.0\.0\.1)$/i.test(window.location?.hostname||""));
 const { CASE_TYPES, CASE_STATUS, isAllowedTransition, transitionValidation } = createCaseDomain(C);
 
@@ -76,44 +84,44 @@ const { CASE_TYPES, CASE_STATUS, isAllowedTransition, transitionValidation } = c
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAV_CONFIG=[
   // â”€â”€ HOME â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"executive",         group:"Executive Overview",label:"Executive Overview",   icon:"\u25A6",parentId:null,       rolesAllowed:["Executive","Manager"]},
+  {id:"executive",         group:"Executive Overview",label:"Executive Overview",   icon:"\u25A6",parentId:null,       rolesAllowed:["Admin"]},
 
   // â”€â”€ ASSETS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"assets",            group:"Assets",          label:"Assets",                 icon:"\u229E",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"registry",          group:"Assets",          label:"Asset Registry",         icon:null,    parentId:"assets",   core:true, rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"inventory.stock",   group:"Assets",          label:"Inventory",              icon:null,    parentId:"assets",   rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"inventory.bookings",group:"Assets",          label:"Booking Request",        icon:null,    parentId:"assets",   rolesAllowed:["Manager","Technician"]},
-  {id:"procurement",       group:"Assets",          label:"Procurement",            icon:null,    parentId:"assets",   rolesAllowed:["Executive","Manager"]},
+  {id:"assets",            group:"Assets",          label:"Assets",                 icon:"\u229E",parentId:null,       rolesAllowed:["Admin","Technician"]},
+  {id:"registry",          group:"Assets",          label:"Asset Registry",         icon:null,    parentId:"assets",   core:true, rolesAllowed:["Admin","Technician"]},
+  {id:"inventory.stock",   group:"Assets",          label:"Inventory",              icon:null,    parentId:"assets",   rolesAllowed:["Admin","Technician"]},
+  {id:"inventory.bookings",group:"Assets",          label:"Booking Request",        icon:null,    parentId:"assets",   rolesAllowed:["Admin","Technician"]},
+  {id:"procurement",       group:"Assets",          label:"Procurement",            icon:null,    parentId:"assets",   rolesAllowed:["Admin","Technician"]},
 
   // â”€â”€ REFRESH & RETURNS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"refresh",           group:"Refresh Returns", label:"Refresh Returns",       icon:"\u21BB",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"refresh.command",   group:"Refresh Returns", label:"Command Center",        icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"refresh.queue",     group:"Refresh Returns", label:"Refresh Queue",         icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"refresh.techs",     group:"Refresh Returns", label:"Appointments",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"refresh.waves",     group:"Refresh Returns", label:"Wave Planner",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager"]},
-  {id:"returns",           group:"Refresh Returns", label:"Return Queue",          icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"returns.lease",     group:"Refresh Returns", label:"Lease Vendor Returns",  icon:null,    parentId:"refresh",  rolesAllowed:["Executive","Manager"]},
+  {id:"refresh",           group:"Refresh Returns", label:"Refresh Returns",       icon:"\u21BB",parentId:null,       rolesAllowed:["Admin","Technician"]},
+  {id:"refresh.command",   group:"Refresh Returns", label:"Command Center",        icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
+  {id:"refresh.queue",     group:"Refresh Returns", label:"Refresh Queue",         icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
+  {id:"refresh.techs",     group:"Refresh Returns", label:"Appointments",          icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
+  {id:"refresh.waves",     group:"Refresh Returns", label:"Wave Planner",          icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
+  {id:"returns",           group:"Refresh Returns", label:"Return Queue",          icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
+  {id:"returns.lease",     group:"Refresh Returns", label:"Lease Vendor Returns",  icon:null,    parentId:"refresh",  rolesAllowed:["Admin","Technician"]},
 
   // â”€â”€ CASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"cases",             group:"Cases",           label:"Cases",                  icon:"\u2637",parentId:null,       rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"cases.all",         group:"Cases",           label:"All Cases",              icon:null,    parentId:"cases",    rolesAllowed:["Executive","Manager","Technician"]},
-  {id:"cases.create",      group:"Cases",           label:"Create Case",            icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
-  {id:"onboarding",        group:"Cases",           label:"Onboarding",             icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
-  {id:"offboarding",       group:"Cases",           label:"Offboarding",            icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
-  {id:"breakfix",          group:"Cases",           label:"Break-fix",              icon:null,    parentId:"cases",    rolesAllowed:["Manager","Technician"]},
+  {id:"cases",             group:"Cases",           label:"Cases",                  icon:"\u2637",parentId:null,       rolesAllowed:["Admin","Technician"]},
+  {id:"cases.all",         group:"Cases",           label:"All Cases",              icon:null,    parentId:"cases",    rolesAllowed:["Admin","Technician"]},
+  {id:"cases.create",      group:"Cases",           label:"Create Case",            icon:null,    parentId:"cases",    rolesAllowed:["Admin","Technician"]},
+  {id:"onboarding",        group:"Cases",           label:"Onboarding",             icon:null,    parentId:"cases",    rolesAllowed:["Admin","Technician"]},
+  {id:"offboarding",       group:"Cases",           label:"Offboarding",            icon:null,    parentId:"cases",    rolesAllowed:["Admin","Technician"]},
+  {id:"breakfix",          group:"Cases",           label:"Break-fix",              icon:null,    parentId:"cases",    rolesAllowed:["Admin","Technician"]},
 
   // â”€â”€ OPERATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"ops",               group:"Operations",      label:"Operations",             icon:"\u25A4",parentId:null,       rolesAllowed:["Executive","Manager"]},
-  {id:"ops.dashboard",     group:"Operations",      label:"Workload Planner",       icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
-  {id:"ops.workload",      group:"Operations",      label:"Team Workload",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
-  {id:"alerts",            group:"Operations",      label:"Alerts and Exceptions",  icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
-  {id:"audit",             group:"Operations",      label:"Audit History",          icon:null,    parentId:"ops",      rolesAllowed:["Executive","Manager"]},
+  {id:"ops",               group:"Operations",      label:"Operations",             icon:"\u25A4",parentId:null,       rolesAllowed:["Admin"]},
+  {id:"ops.dashboard",     group:"Operations",      label:"Workload Planner",       icon:null,    parentId:"ops",      rolesAllowed:["Admin"]},
+  {id:"ops.workload",      group:"Operations",      label:"Team Workload",          icon:null,    parentId:"ops",      rolesAllowed:["Admin"]},
+  {id:"alerts",            group:"Operations",      label:"Alerts and Exceptions",  icon:null,    parentId:"ops",      rolesAllowed:["Admin"]},
+  {id:"audit",             group:"Operations",      label:"Audit History",          icon:null,    parentId:"ops",      rolesAllowed:["Admin"]},
 
   // â”€â”€ ADMINISTRATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  {id:"admin",             group:"Administration",  label:"Administration",         icon:"\u2699",parentId:null,       rolesAllowed:["Manager"]},
-  {id:"admin.config",      group:"Administration",  label:"Admin Config",           icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
-  {id:"admin.import",      group:"Administration",  label:"AMS Import",             icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
-  {id:"automation",        group:"Administration",  label:"Lifecycle Engine",       icon:null,    parentId:"admin",    rolesAllowed:["Manager"]},
+  {id:"admin",             group:"Administration",  label:"Administration",         icon:"\u2699",parentId:null,       rolesAllowed:["Admin","Technician"]},
+  {id:"admin.config",      group:"Administration",  label:"Admin Config",           icon:null,    parentId:"admin",    rolesAllowed:["Admin","Technician"]},
+  {id:"admin.import",      group:"Administration",  label:"AMS Import",             icon:null,    parentId:"admin",    rolesAllowed:["Admin","Technician"]},
+  {id:"automation",        group:"Administration",  label:"Lifecycle Engine",       icon:null,    parentId:"admin",    rolesAllowed:["Admin","Technician"]},
 ];
 const buildNavTree=(items)=>{
   const roots=items.filter(item=>item.parentId==null);
@@ -242,21 +250,21 @@ function navConfigUnitTests(){
   if(!IS_DEV)return;
 
   const validConfig=[
-    {id:"root",label:"Root",icon:"R",parentId:null,rolesAllowed:["Manager"]},
-    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Manager"]},
+    {id:"root",label:"Root",icon:"R",parentId:null,rolesAllowed:["Admin"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
   ];
   const cycleConfig=[
-    {id:"a",label:"A",icon:null,parentId:"c",rolesAllowed:["Manager"]},
-    {id:"b",label:"B",icon:null,parentId:"a",rolesAllowed:["Manager"]},
-    {id:"c",label:"C",icon:null,parentId:"b",rolesAllowed:["Manager"]},
+    {id:"a",label:"A",icon:null,parentId:"c",rolesAllowed:["Admin"]},
+    {id:"b",label:"B",icon:null,parentId:"a",rolesAllowed:["Admin"]},
+    {id:"c",label:"C",icon:null,parentId:"b",rolesAllowed:["Admin"]},
   ];
   const deepConfig=[
-    {id:"root",label:"Root",icon:null,parentId:null,rolesAllowed:["Manager"]},
-    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Manager"]},
-    {id:"grandchild",label:"Grandchild",icon:null,parentId:"child",rolesAllowed:["Manager"]},
+    {id:"root",label:"Root",icon:null,parentId:null,rolesAllowed:["Admin"]},
+    {id:"child",label:"Child",icon:null,parentId:"root",rolesAllowed:["Admin"]},
+    {id:"grandchild",label:"Grandchild",icon:null,parentId:"child",rolesAllowed:["Admin"]},
   ];
   const multiErrorConfig=[
-    {id:"dup",label:"One",icon:null,parentId:null,rolesAllowed:["Manager"]},
+    {id:"dup",label:"One",icon:null,parentId:null,rolesAllowed:["Admin"]},
     {id:"dup",label:"Two",icon:null,parentId:"missing",rolesAllowed:["BadRole"]},
   ];
 
@@ -536,7 +544,18 @@ const OFF_STAGES_L2=["investigating","label_sent","awaiting_movement","secondary
 // OFFBOARDING_WORKLOAD_MINUTES: estimated effort per active offboarding case.
 // Tune this value as you gather real data on coordinator time-per-case.
 // Consumed by: TeamWorkloadView, OperationsWorkloadPlanner â†’ capRows
-const OFFBOARDING_WORKLOAD_MINUTES=40;
+const OFFBOARDING_WORKLOAD_MINUTES=45;
+const WORKLOAD_DAILY_CAPACITY_MINUTES=390;
+const WORKLOAD_DURATION_DEFAULTS={
+  refresh:{estimatedMinutes:150,durationNote:"est. 150 min"},
+  onboarding:{estimatedMinutes:30,durationNote:"30 min"},
+  offboarding:{estimatedMinutes:45,durationNote:"up to 45 min"},
+};
+const getWorkloadDurationMeta=(workloadType,fallbackMinutes=null)=>{
+  const preset=WORKLOAD_DURATION_DEFAULTS[workloadType];
+  if(preset)return {workloadType,estimatedMinutes:preset.estimatedMinutes,durationNote:preset.durationNote};
+  return {workloadType,estimatedMinutes:fallbackMinutes??0,durationNote:fallbackMinutes?`${fallbackMinutes} min planning default`:""};
+};
 const OFF_ACTIVE_STATUSES=["new","label_sent","awaiting_movement","followup_1_sent","followup_2_sent","needs_review","investigating","secondary_followup_1","secondary_followup_2","escalated"];
 // Helper â€” returns a local ISO timestamp string
 const offNow=()=>toLocalISODate()+" "+new Date().toTimeString().slice(0,5);
@@ -2549,18 +2568,13 @@ const ADM_RULES=[
   {id:"R6",name:"Reservation expiry",trigger:"reservation.expires_at < NOW()",action:"Release reservation, return asset to In Stock",active:true},
 ];
 const ADM_ROLES=[
-  {role:"ITAM Admin",users:2,perms:"Full access to all modules, admin settings, user management"},
-  {role:"ITAM Coordinator",users:3,perms:"Asset Registry, Refresh Ops, Inventory, Procurement (read/write)"},
-  {role:"Technician",users:4,perms:"Refresh Queue, provisioning, deployment actions"},
-  {role:"Warehouse Tech",users:2,perms:"Inventory, receiving, return processing, lease returns"},
-  {role:"Local IT",users:6,perms:"Refresh Queue (own office), deployment confirmation"},
-  {role:"Finance (Read Only)",users:5,perms:"Procurement, Asset Registry (read only), cost reports"},
-  {role:"Help Desk",users:8,perms:"Asset lookup, booking requests, ServiceNow linking"},
+  {role:"Admin",users:5,perms:"Executive Overview, Assets, Refresh Returns, Cases, Operations, Administration"},
+  {role:"Technician",users:1,perms:"Assets, Refresh Returns, Cases, Administration"},
 ];
 
-function AdminModule({setToast}){
-  const [tab,setTab]=useState("models");
-  const tabs=[{k:"models",l:"Device Models",n:ADM_MODELS.length},{k:"vendors",l:"Vendors",n:ADM_VENDORS.length},{k:"locations",l:"Locations",n:ADM_LOCATIONS.length},{k:"techs",l:"Technicians",n:TECHS.length},{k:"carriers",l:"Carriers",n:ADM_CARRIERS.length},{k:"statuses",l:"Lifecycle Statuses",n:ADM_STATUSES.length},{k:"rules",l:"Refresh Rules",n:ADM_RULES.length},{k:"roles",l:"Roles & Permissions",n:ADM_ROLES.length}];
+function AdminModule({setToast,currentPersona,personas,onSwitchPersona}){
+  const [tab,setTab]=useState("personas");
+  const tabs=[{k:"personas",l:"Persona Switch",n:personas.length},{k:"models",l:"Device Models",n:ADM_MODELS.length},{k:"vendors",l:"Vendors",n:ADM_VENDORS.length},{k:"locations",l:"Locations",n:ADM_LOCATIONS.length},{k:"techs",l:"Technicians",n:TECHS.length},{k:"carriers",l:"Carriers",n:ADM_CARRIERS.length},{k:"statuses",l:"Lifecycle Statuses",n:ADM_STATUSES.length},{k:"rules",l:"Refresh Rules",n:ADM_RULES.length},{k:"roles",l:"Roles & Permissions",n:ADM_ROLES.length}];
   const th={position:"sticky",top:0,zIndex:5,padding:"7px 10px",textAlign:"left",background:C.panel,borderBottom:`2px solid ${C.border}`,fontSize:9.5,fontWeight:700,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"};
   const td=(ri)=>({padding:"7px 10px",borderBottom:`1px solid ${C.borderLight}`,background:ri%2===0?C.surface:C.surfaceAlt,fontSize:12});
   const act=(v)=>v?(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.greenSoft,color:C.green,fontWeight:600}}>Active</span>):(<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:C.graySoft,color:C.gray,fontWeight:600}}>Inactive</span>);
@@ -2571,6 +2585,8 @@ function AdminModule({setToast}){
     </div>
 
     <div style={{background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,overflow:"auto",boxShadow:C.shadow,maxHeight:"calc(100vh - 280px)"}}>
+      {tab==="personas"&&<table style={{width:"100%"}}><thead><tr><th style={th}>Persona</th><th style={th}>Access Tier</th><th style={th}>Active</th><th style={th}>Action</th></tr></thead><tbody>{personas.map((persona,i)=>(<tr key={persona.id}><td style={{...td(i),fontWeight:600}}>{persona.name}</td><td style={td(i)}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:persona.tier==="Admin"?C.accentSoft:C.greenSoft,color:persona.tier==="Admin"?C.accent:C.green,fontWeight:600,fontFamily:MN}}>{persona.tier}</span></td><td style={td(i)}>{currentPersona?.id===persona.id?act(true):<span style={{fontSize:10,color:C.muted}}>Inactive</span>}</td><td style={td(i)}>{currentPersona?.id===persona.id?<span style={{fontSize:10,color:C.muted}}>Current</span>:<button onClick={()=>onSwitchPersona(persona.id)} style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,fontSize:10.5,cursor:"pointer"}}>Switch</button>}</td></tr>))}</tbody></table>}
+
       {tab==="models"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Model Name</th><th style={th}>Manufacturer</th><th style={th}>Type</th><th style={th}>RAM</th><th style={th}>Storage</th><th style={th}>Lifecycle (mo)</th><th style={th}>Status</th></tr></thead><tbody>{ADM_MODELS.map((m,i)=>(<tr key={m.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{m.id}</span></td><td style={{...td(i),fontWeight:500}}>{m.name}</td><td style={td(i)}>{m.mfr}</td><td style={td(i)}>{m.type}</td><td style={{...td(i),fontFamily:MN}}>{m.ram}</td><td style={{...td(i),fontFamily:MN}}>{m.storage}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{m.lifecycle}</td><td style={td(i)}>{act(m.active)}</td></tr>))}</tbody></table>}
 
       {tab==="vendors"&&<table style={{width:"100%"}}><thead><tr><th style={th}>ID</th><th style={th}>Vendor Name</th><th style={th}>Type</th><th style={th}>Contact</th><th style={th}>Contracts</th><th style={th}>Status</th></tr></thead><tbody>{ADM_VENDORS.map((v,i)=>(<tr key={v.id}><td style={td(i)}><span style={{fontFamily:MN,color:C.accent,fontWeight:600}}>{v.id}</span></td><td style={{...td(i),fontWeight:500}}>{v.name}</td><td style={td(i)}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:v.type==="VAR"?C.purpleSoft:v.type==="OEM"?C.cyanSoft:C.amberSoft,color:v.type==="VAR"?C.purple:v.type==="OEM"?C.cyan:C.amber,fontWeight:600,fontFamily:MN}}>{v.type}</span></td><td style={{...td(i),fontFamily:MN,fontSize:11,color:C.sub}}>{v.contact}</td><td style={{...td(i),fontFamily:MN,textAlign:"center"}}>{v.contracts}</td><td style={td(i)}>{act(v.active)}</td></tr>))}</tbody></table>}
@@ -3020,6 +3036,7 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
   const regAssets=assets;
   const refreshRows=useMemo(()=>getOpenRefreshOperationalRows(cases),[cases]);
   const refreshReturns=useMemo(()=>getRefreshReturnRows(cases),[cases]);
+  const techAvgMinutes=useCallback((techName)=>TECHS.find(t=>t.name===techName)?.avg||45,[]);
   const weekdays=["Mon","Tue","Wed","Thu","Fri"];
   const startOfWeek=(d)=>{const x=new Date(`${toLocalISODate(d)}T00:00:00`);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x;};
   const monday=useMemo(()=>startOfWeek(new Date()),[]);
@@ -3036,36 +3053,77 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
     const out=[];
     refreshRows.filter(row=>row.tech&&techNames.includes(row.tech)&&row.scheduled&&REFRESH_APPOINTMENT_STATUSES.includes(row.status)).forEach(row=>{
       const d=parseYmd(row.scheduled);const i=idxByDate(d);if(i===null)return;
-      out.push({id:`RF-${row.id}`,tech:row.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${row.id}`,ref:row.user,module:"refresh.queue"});
+      out.push({id:`RF-${row.id}`,tech:row.tech,day:i,type:"refresh",time:timeFor("refresh"),title:`Refresh appointment ${row.id}`,ref:row.user,module:"refresh.queue",caseId:row.id,user:row.user,status:row.status,date:row.scheduled,office:row.office,context:row.office,...getWorkloadDurationMeta("refresh")});
     });
     refreshRows.filter(row=>row.tech&&techNames.includes(row.tech)&&row.scheduled&&REFRESH_PROVISIONING_STATUSES.includes(row.status)).forEach(row=>{
       const d=parseYmd(row.scheduled);const i=idxByDate(d);if(i===null)return;
-      out.push({id:`PV-${row.id}`,tech:row.tech,day:i,type:"provisioning",time:timeFor("provisioning"),title:`Provision device ${row.id}`,ref:row.asset,module:"refresh.queue"});
+      out.push({id:`PV-${row.id}`,tech:row.tech,day:i,type:"provisioning",time:timeFor("provisioning"),title:`Provision device ${row.id}`,ref:row.asset,module:"refresh.queue",caseId:row.id,user:row.user,status:row.status,date:row.scheduled,office:row.office,context:row.asset,...getWorkloadDurationMeta("refresh")});
     });
     refreshReturns.filter(row=>row.tech&&techNames.includes(row.tech)&&(row.returnDate||row.appointmentDate)&&REFRESH_RETURN_PENDING_STATUSES.includes(row.status)).forEach(row=>{
       const d=parseYmd(row.returnDate||row.appointmentDate);const i=idxByDate(d);if(i===null)return;
-      out.push({id:`RT-${row.caseId}`,tech:row.tech,day:i,type:"return",time:timeFor("return"),title:`Return processing ${row.caseId}`,ref:row.asset,module:"returns"});
+      out.push({id:`RT-${row.caseId}`,tech:row.tech,day:i,type:"return",time:timeFor("return"),title:`Return processing ${row.caseId}`,ref:row.asset,module:"returns",caseId:row.caseId,user:row.user,status:row.status,date:row.returnDate||row.appointmentDate,office:row.office,context:row.tracking||row.asset,...getWorkloadDurationMeta("return",techAvgMinutes(row.tech))});
     });
     auditEvents.forEach(e=>{
       const d=parseTs(e.ts);const i=idxByDate(d);if(i===null)return;
       if(e.by==="Lifecycle Automation Engine"&&e.type==="reservation"){
         const fallback=TECHS[0]?.name||"";
-        if(fallback)out.push({id:`IP-${e.id}`,tech:fallback,day:i,type:"inventory_prep",time:"11:30",title:"Inventory preparation",ref:e.asset,module:"inventory.stock"});
+        if(fallback)out.push({id:`IP-${e.id}`,tech:fallback,day:i,type:"inventory_prep",time:"11:30",title:"Inventory preparation",ref:e.asset,module:"inventory.stock",caseId:e.id,user:e.user||"-",status:e.type,date:e.ts.slice(0,10),office:"-",context:e.asset,...getWorkloadDurationMeta("inventory_prep",techAvgMinutes(fallback))});
         return;
       }
       const tech=e.by;
       if(!techNames.includes(tech))return;
-      if(e.type==="shipment")out.push({id:`SH-${e.id}`,tech,day:i,type:"shipment",time:timeFor("shipment",e.ts.slice(11,16)),title:"Shipment preparation",ref:e.asset,module:"procurement"});
+      if(e.type==="shipment")out.push({id:`SH-${e.id}`,tech,day:i,type:"shipment",time:timeFor("shipment",e.ts.slice(11,16)),title:"Shipment preparation",ref:e.asset,module:"procurement",caseId:e.id,user:e.user||"-",status:e.type,date:e.ts.slice(0,10),office:"-",context:e.asset,...getWorkloadDurationMeta("shipment",techAvgMinutes(tech))});
     });
     return out;
-  },[auditEvents,monday,refreshReturns,refreshRows,techNames]);
+  },[auditEvents,monday,refreshReturns,refreshRows,techAvgMinutes,techNames]);
 
   const [selectedTech,setSelectedTech]=useState(TECHS[0]?.name||"");
   const [selectedCell,setSelectedCell]=useState({tech:TECHS[0]?.name||"",day:0});
-  const cellTasks=useMemo(()=>tasks.filter(t=>t.tech===selectedCell.tech&&t.day===selectedCell.day).sort((a,b)=>a.time.localeCompare(b.time)),[tasks,selectedCell]);
+  const plannerBuckets=useMemo(()=>{
+    const map=new Map();
+    tasks.forEach(task=>{
+      const key=`${task.tech}::${task.day}`;
+      const bucket=map.get(key)||{rows:[],taskCount:0,totalEstimatedMinutes:0};
+      bucket.rows.push(task);
+      bucket.taskCount+=1;
+      bucket.totalEstimatedMinutes+=task.estimatedMinutes||0;
+      map.set(key,bucket);
+    });
+    map.forEach(bucket=>bucket.rows.sort((a,b)=>a.time.localeCompare(b.time)));
+    return map;
+  },[tasks]);
+  const selectedCellBucket=useMemo(
+    ()=>plannerBuckets.get(`${selectedCell.tech}::${selectedCell.day}`)||{rows:[],taskCount:0,totalEstimatedMinutes:0},
+    [plannerBuckets,selectedCell]
+  );
+  const getCellCapacityMetrics=useCallback((tech,day)=>{
+    const bucket=plannerBuckets.get(`${tech}::${day}`)||{rows:[],taskCount:0,totalEstimatedMinutes:0};
+    const capacityMinutes=WORKLOAD_DAILY_CAPACITY_MINUTES;
+    const totalEstimatedMinutes=bucket.totalEstimatedMinutes||0;
+    const utilizationPercent=Math.round((totalEstimatedMinutes/Math.max(1,capacityMinutes))*100);
+    const remainingMinutes=capacityMinutes-totalEstimatedMinutes;
+    const pressureState=utilizationPercent===0?"light":utilizationPercent>=100?"overloaded":utilizationPercent>=85?"near capacity":utilizationPercent>=50?"balanced":"light";
+    return {
+      taskCount:bucket.taskCount||0,
+      totalEstimatedMinutes,
+      capacityMinutes,
+      utilizationPercent,
+      remainingMinutes,
+      pressureState,
+      rows:bucket.rows||[],
+    };
+  },[plannerBuckets]);
+  const selectedCellMetrics=useMemo(
+    ()=>getCellCapacityMetrics(selectedCell.tech,selectedCell.day),
+    [getCellCapacityMetrics,selectedCell]
+  );
+  const cellTasks=selectedCellBucket.rows;
+  const cellTaskMinutes=selectedCellBucket.totalEstimatedMinutes;
   const dailySchedule=useMemo(()=>tasks.filter(t=>t.tech===selectedTech).sort((a,b)=>a.day===b.day?a.time.localeCompare(b.time):a.day-b.day),[tasks,selectedTech]);
-  const byTechDay=(tech,day)=>tasks.filter(t=>t.tech===tech&&t.day===day).length;
-  const techWeekly=(tech)=>tasks.filter(t=>t.tech===tech).length;
+  const byTechDay=(tech,day)=>plannerBuckets.get(`${tech}::${day}`)?.taskCount||0;
+  const byTechDayMinutes=(tech,day)=>plannerBuckets.get(`${tech}::${day}`)?.totalEstimatedMinutes||0;
+  const techWeekly=(tech)=>weekdays.reduce((sum,_,day)=>sum+byTechDay(tech,day),0);
+  const techWeeklyMinutes=(tech)=>weekdays.reduce((sum,_,day)=>sum+byTechDayMinutes(tech,day),0);
   // Active offboarding load â€” distributed evenly across team (no tech assigned)
   const activeOffboardingCount=useMemo(()=>OFFBOARDING.filter(o=>OFF_ACTIVE_STATUSES.includes(o.status)).length,[]);
   const offboardingMinutesPerTech=useMemo(()=>{
@@ -3077,16 +3135,16 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
     // Weekly capacity in tasks (cap = tasks/day)
     const cap=t.cap*5;
     const sch=techWeekly(t.name);
+    const schMinutes=techWeeklyMinutes(t.name);
     // Convert scheduled tasks to minutes using this tech's avg handle time,
     // then add their share of offboarding load before computing utilization.
     // This keeps utilization honest: 1 task â‰  1 minute.
-    const schedMinutes=sch*t.avg;
-    const totalMinutes=schedMinutes+offboardingMinutesPerTech;
+    const totalMinutes=schMinutes+offboardingMinutesPerTech;
     const capMinutes=cap*t.avg; // weekly capacity in minutes
     const util=Math.round((totalMinutes/Math.max(1,capMinutes))*100);
     const status=util>100?"Overloaded":util<50?"Underutilized":"Normal";
-    return {name:t.name,cap,sch,util,status,offboardingMin:offboardingMinutesPerTech};
-  }),[tasks,offboardingMinutesPerTech]);
+    return {name:t.name,cap,sch,schMinutes,util,status,offboardingMin:offboardingMinutesPerTech};
+  }),[offboardingMinutesPerTech,tasks]);
   const typeBreakdown=useMemo(()=>{
     const map={refresh:0,provisioning:0,shipment:0,return:0,inventory_prep:0};
     tasks.forEach(t=>{map[t.type]=(map[t.type]||0)+1;});
@@ -3105,13 +3163,15 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
   const typeLabel={refresh:"Refresh",provisioning:"Provisioning",shipment:"Shipment",return:"Return",inventory_prep:"Inventory Prep"};
   const typeBg={refresh:C.accentSoft,provisioning:C.orangeSoft,shipment:C.cyanSoft,return:C.greenSoft,inventory_prep:C.purpleSoft};
   const typeCol={refresh:C.accent,provisioning:C.orange,shipment:C.cyan,return:C.green,inventory_prep:C.purple};
+  const pressureLabel={light:"Light",balanced:"Balanced","near capacity":"Near Capacity",overloaded:"Overloaded"};
+  const pressureColor={light:C.sub,balanced:C.green,"near capacity":C.amber,overloaded:C.red};
 
   return (<>
     <SH color={C.accent} badge="Operations Workload Planner">Weekly Workload Grid</SH>
     <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:10,overflowX:"auto"}}>
       <table style={{width:"100%",minWidth:760}}>
         <thead><tr>{["Technician",...weekdays,"Weekly Total"].map(h=><th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase",borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
-        <tbody>{TECHS.map((t,i)=><tr key={t.id}><td style={{padding:"7px 8px",fontSize:12,fontWeight:600,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}>{t.name}</td>{weekdays.map((_,d)=>{const n=byTechDay(t.name,d);const active=selectedCell.tech===t.name&&selectedCell.day===d;return <td key={d} onClick={()=>{setSelectedCell({tech:t.name,day:d});setSelectedTech(t.name);}} style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer",background:active?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><span style={{fontFamily:MN,fontWeight:700,color:n>0?C.accent:C.light}}>{n}</span></td>;})}<td style={{padding:"7px 8px",fontFamily:MN,fontWeight:700,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}>{techWeekly(t.name)}</td></tr>)}</tbody>
+        <tbody>{TECHS.map((t,i)=><tr key={t.id}><td style={{padding:"7px 8px",fontSize:12,fontWeight:600,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}>{t.name}</td>{weekdays.map((_,d)=>{const n=byTechDay(t.name,d);const mins=byTechDayMinutes(t.name,d);const metrics=getCellCapacityMetrics(t.name,d);const active=selectedCell.tech===t.name&&selectedCell.day===d;return <td key={d} onClick={()=>{setSelectedCell({tech:t.name,day:d});setSelectedTech(t.name);}} style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer",background:active?C.accentSoft:i%2?C.surfaceAlt:C.surface}}><div style={{fontFamily:MN,fontWeight:700,color:n>0?C.accent:C.light}}>{n}</div><div style={{fontFamily:MN,fontSize:9,color:n>0?C.sub:C.light}}>{mins}m</div><div style={{fontFamily:MN,fontSize:9,color:n>0?pressureColor[metrics.pressureState]:C.light}}>{n>0?`${metrics.utilizationPercent}%`:`0%`}</div></td>;})}<td style={{padding:"7px 8px",fontFamily:MN,fontWeight:700,borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}><div>{techWeekly(t.name)}</div><div style={{fontSize:9,color:C.sub}}>{techWeeklyMinutes(t.name)}m</div></td></tr>)}</tbody>
       </table>
     </div>
 
@@ -3121,8 +3181,15 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
         {dailySchedule.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks scheduled this week.</div>:dailySchedule.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><span style={{width:72,fontFamily:MN,fontSize:10,color:C.muted}}>{fmtDay(t.day)}</span><span style={{width:44,fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:typeBg[t.type],color:typeCol[t.type],fontWeight:600,fontFamily:MN}}>{typeLabel[t.type]}</span><span style={{fontSize:11.5,flex:1}}>{t.title}</span><button onClick={()=>go(t.module)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:C.surface,fontSize:10.5,cursor:"pointer"}}>Open</button></div>)}
       </div>
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:12}}>
-        <div style={{fontSize:12.5,fontWeight:700,marginBottom:8}}>Cell Detail: {selectedCell.tech} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {fmtDay(selectedCell.day)}</div>
-        {cellTasks.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks in selected cell.</div>:cellTasks.map(t=><div key={t.id} style={{padding:"6px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11.5,fontWeight:500}}>{t.title}</span><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span></div><div style={{fontSize:10,color:C.muted}}>{t.ref}</div></div>)}
+        <div style={{fontSize:12.5,fontWeight:700,marginBottom:4}}>Cell Detail: {selectedCell.tech} | {fmtDay(selectedCell.day)}</div>
+        <div style={{fontSize:10.5,color:C.muted,marginBottom:8}}>{selectedCellBucket.taskCount} task{selectedCellBucket.taskCount===1?"":"s"} | {cellTaskMinutes} estimated min</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",fontSize:10,color:C.sub,marginBottom:8}}>
+          <span>Capacity: <span style={{fontFamily:MN}}>{selectedCellMetrics.capacityMinutes}m</span></span>
+          <span>Remaining: <span style={{fontFamily:MN,color:selectedCellMetrics.remainingMinutes<0?C.red:C.sub}}>{selectedCellMetrics.remainingMinutes}m</span></span>
+          <span>Utilization: <span style={{fontFamily:MN,color:pressureColor[selectedCellMetrics.pressureState]}}>{selectedCellMetrics.utilizationPercent}%</span></span>
+          <span style={{color:pressureColor[selectedCellMetrics.pressureState]}}>State: {pressureLabel[selectedCellMetrics.pressureState]}</span>
+        </div>
+        {cellTasks.length===0?<div style={{fontSize:11,color:C.muted}}>No tasks in selected cell.</div>:cellTasks.map(t=><div key={t.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.borderLight}`}}><div style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:4}}><span style={{fontSize:11.5,fontWeight:600}}>{t.caseId||t.id}</span><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{t.time}</span></div><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:typeBg[t.type],color:typeCol[t.type],fontWeight:600,fontFamily:MN}}>{typeLabel[t.type]}</span><CSChip s={t.status}/><span style={{fontFamily:MN,fontSize:10,color:C.sub}}>{t.estimatedMinutes}m</span></div><div style={{fontSize:11.5,fontWeight:500,marginBottom:2}}>{t.user||t.ref||"-"}</div><div style={{fontSize:10.5,color:C.sub,marginBottom:3}}>{t.title}</div><div style={{fontSize:10,color:C.muted,display:"grid",gap:2,marginTop:3}}><div>Date: {t.date||fmtDay(selectedCell.day)}</div><div>Workload Type: {typeLabel[t.type]||t.workloadType||t.type}</div><div>Office: {t.office||"-"}</div><div>Context: {t.context||t.ref||"-"}</div>{t.durationNote&&<div>Estimate: {t.durationNote}</div>}</div></div>)}
       </div>
     </div>
 
@@ -3130,7 +3197,7 @@ function OperationsWorkloadPlanner({go,setToast,cases=SEED_CASES,auditEvents=AUD
     <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,boxShadow:C.shadow,padding:10,overflowX:"auto"}}>
       <table style={{width:"100%",minWidth:760}}>
         <thead><tr>{["Technician","Weekly Capacity","Tasks Scheduled","Offboarding Min","Utilization %","Status"].map(h=><th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:9,color:C.muted,fontFamily:MN,textTransform:"uppercase",borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
-        <tbody>{capRows.map((r,i)=><tr key={r.name}><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontWeight:600}}>{r.name}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}>{r.cap}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}>{r.sch}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.offboardingMin>0?C.amber:C.muted}}>{r.offboardingMin}m</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.util>100?C.red:r.util<50?C.amber:C.green}}>{r.util}%</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:r.status==="Overloaded"?C.redSoft:r.status==="Underutilized"?C.amberSoft:C.greenSoft,color:r.status==="Overloaded"?C.red:r.status==="Underutilized"?C.amber:C.green,fontWeight:600}}>{r.status}</span></td></tr>)}</tbody>
+        <tbody>{capRows.map((r,i)=><tr key={r.name}><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontWeight:600}}>{r.name}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}>{r.cap}</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN}}><div>{r.sch}</div><div style={{fontSize:9,color:C.sub}}>{r.schMinutes}m</div></td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.offboardingMin>0?C.amber:C.muted}}>{r.offboardingMin}m</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface,fontFamily:MN,color:r.util>100?C.red:r.util<50?C.amber:C.green}}>{r.util}%</td><td style={{padding:"7px 8px",borderBottom:`1px solid ${C.borderLight}`,background:i%2?C.surfaceAlt:C.surface}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:r.status==="Overloaded"?C.redSoft:r.status==="Underutilized"?C.amberSoft:C.greenSoft,color:r.status==="Overloaded"?C.red:r.status==="Underutilized"?C.amber:C.green,fontWeight:600}}>{r.status}</span></td></tr>)}</tbody>
       </table>
     </div>
 
@@ -5008,7 +5075,7 @@ function DataImportModule(props){
 
 // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ MAIN ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 export default function ITAMPlatform(){
-  const [currentRole,setCurrentRole]=useState("Manager");
+  const [currentPersonaId,setCurrentPersonaId]=useState("jon_dinh");
   const [nav,setNav]=useState("refresh.command");
   const [hover,setHover]=useState(null);
   const [toast,setToast]=useState(null);
@@ -5024,6 +5091,8 @@ export default function ITAMPlatform(){
   const [casePrefill,setCasePrefill]=useState(null);
   const [caseSelection,setCaseSelection]=useState(null);
   const [selectedAssetTag,setSelectedAssetTag]=useState(null);
+  const currentPersona=useMemo(()=>PERSONAS.find(persona=>persona.id===currentPersonaId)||PERSONAS[0],[currentPersonaId]);
+  const currentRole=currentPersona.tier;
   const visibleNav=useMemo(()=>getVisibleNavTreeForRole(currentRole),[currentRole]);
   const defaultNavId=useMemo(()=>getDefaultNavIdForRole(currentRole),[currentRole]);
 
@@ -5058,6 +5127,11 @@ export default function ITAMPlatform(){
     if(safeNavId!=="registry")setSelectedAssetTag(null);
   },[currentRole,defaultNavId]);
   const goHome=useCallback(()=>goSafe(defaultNavId),[goSafe,defaultNavId]);
+  const switchPersona=useCallback((personaId)=>{
+    const nextPersona=PERSONAS.find(persona=>persona.id===personaId);
+    if(!nextPersona)return;
+    setCurrentPersonaId(nextPersona.id);
+  },[]);
   // Legacy helper names retained because other modules already use them.
   // They now act as general deep-link helpers for case-id and asset-tag navigation.
   const openCaseFromAsset=useCallback((caseId)=>{setCasePrefill(null);setCaseSelection(caseId);goSafe("cases.all");},[goSafe]);
@@ -5173,9 +5247,9 @@ export default function ITAMPlatform(){
           <div><div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span onClick={()=>goSafe("refresh.command")} style={{fontSize:10.5,color:C.accent,fontWeight:500,cursor:"pointer"}}>ITAM Platform</span><span style={{fontSize:10,color:C.light}}>/</span><span style={{fontSize:10.5,color:C.text,fontWeight:600}}>{crumb}</span></div><div style={{fontSize:14,fontWeight:700,letterSpacing:"-0.02em"}}>{pageTitle}</div></div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:C.panel}}>
-              <span style={{fontSize:9,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>Prototype Role</span>
-              <select value={currentRole} onChange={e=>setCurrentRole(e.target.value)} style={{padding:"3px 6px",borderRadius:4,border:`1px solid ${C.border}`,background:C.surface,color:C.text,fontSize:11,fontWeight:600,fontFamily:SN,cursor:"pointer"}}>
-                {NAV_ROLES.map(role=><option key={role} value={role}>{role}</option>)}
+              <span style={{fontSize:9,color:C.muted,fontFamily:MN,letterSpacing:"0.08em",textTransform:"uppercase"}}>Prototype Persona</span>
+              <select value={currentPersonaId} onChange={e=>switchPersona(e.target.value)} style={{padding:"3px 6px",borderRadius:4,border:`1px solid ${C.border}`,background:C.surface,color:C.text,fontSize:11,fontWeight:600,fontFamily:SN,cursor:"pointer"}}>
+                {PERSONAS.map(persona=><option key={persona.id} value={persona.id}>{persona.name} ({persona.tier})</option>)}
               </select>
             </div>
             <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.borderLight}`,background:"transparent",color:C.sub,fontSize:11,cursor:"pointer",fontWeight:500}}>{theme==="dark"?"Light Mode":"Dark Mode"}</button>
@@ -5207,7 +5281,7 @@ export default function ITAMPlatform(){
           {nav==="registry"&&<AssetRegistryModule setToast={setToast} assets={assets} cases={cases} setCasePrefill={setCasePrefill} onOpenCase={openCaseFromAsset} go={goSafe} selectedAssetTag={selectedAssetTag} onClearAssetSelection={clearAssetSelection} onUpdateAsset={updateAssetByTag} assetActivity={assetActivity}/>}
           {nav==="procurement"&&<ProcurementModule setToast={setToast} go={goSafe}/>}
           {nav==="audit"&&<AuditModule setToast={setToast} go={goSafe} onOpenAsset={openAssetFromCase} auditEvents={auditEvents}/>}
-          {(nav==="admin"||nav==="admin.config")&&<AdminModule setToast={setToast}/>}
+          {(nav==="admin"||nav==="admin.config")&&<AdminModule setToast={setToast} currentPersona={currentPersona} personas={PERSONAS} onSwitchPersona={switchPersona}/>}
       {nav==="admin.import"&&<DataImportModule setToast={setToast} assets={assets} setAssets={setAssets} cases={cases} setCases={setCases} go={goSafe} prePromoteRef={prePromoteRef} assetActivity={assetActivity} setAssetActivity={setAssetActivity} prePromoteActivityRef={prePromoteActivityRef} onResetToDemo={resetToDemoData}/>}
           {nav==="automation"&&<LifecycleAutomationModule setToast={setToast} go={goSafe} onAutomationEvent={onAutomationEvent} onOpenAsset={openAssetFromCase}/>}
         </main>
