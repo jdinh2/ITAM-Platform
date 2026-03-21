@@ -1,12 +1,12 @@
-// ─── src/features/cases/domain.js ────────────────────────────────────────────
+﻿// â”€â”€â”€ src/features/cases/domain.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Case management domain constants, transition logic, and validation.
 // Phase 1 extraction from ITAM.jsx.
 //
 // Pure constants (no theme dependency) are exported directly.
 // Theme-dependent constants are exported via createCaseDomain(C).
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ─── PURE CONSTANTS ──────────────────────────────────────────────────────────
+// â”€â”€â”€ PURE CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const CLOSED_CASE_STATUSES=["completed","closed","canceled","rejected"];
 
 export const CASE_TRANSITIONS={
@@ -31,7 +31,7 @@ export const CASE_TRANSITIONS={
   procurement_exception:{new:["pending_approval"],pending_approval:["approved","rejected"],approved:["ordered"],ordered:["received"],received:["closed"]},
 };
 
-// ─── THEME-DEPENDENT FACTORY ─────────────────────────────────────────────────
+// â”€â”€â”€ THEME-DEPENDENT FACTORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function createCaseDomain(C){
   const CASE_TYPES={
     onboarding:{l:"Onboarding",icon:"\u2795",c:C.green,bg:C.greenSoft,bd:C.greenBorder,statuses:["new","pending_scheduling","scheduled","in_progress","completed","canceled"],fields:["userId","locationId","neededDate","notes"]},
@@ -79,3 +79,4 @@ export function createCaseDomain(C){
 
   return { CASE_TYPES, CASE_STATUS, isAllowedTransition, transitionValidation };
 }
+

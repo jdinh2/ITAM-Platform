@@ -1,18 +1,14 @@
-// ─── src/features/cases/actions.js ───────────────────────────────────────────
-// Phase 2 extraction: stateful case action helpers.
+﻿// Phase 2 extraction: stateful case action helpers.
 //
 // Pattern: dependency injection via createCaseActions(deps).
-// All React state setters and domain constants are passed in — this module
+// All React state setters and domain constants are passed in - this module
 // has no direct import of React and no closure over component-local variables.
 //
 // Pure helpers (buildRefreshExecutionFields, buildReturnIntakeFields,
 // isReturnIntakeCase, canProcessReturnReceived, canCompleteReturnIntake)
-// are exported directly — they have zero stateful dependencies.
-// ─────────────────────────────────────────────────────────────────────────────
+// are exported directly - they have zero stateful dependencies.
 
 import { INTAKE_COND, INTAKE_DISP } from "./shipping.js";
-
-// ─── PURE HELPERS (no deps, exported directly) ──────────────────────────────
 
 export const buildRefreshExecutionFields=(source)=>({
   shipmentId:source.shipmentId||"",
@@ -36,31 +32,29 @@ export const isReturnIntakeCase=(cs)=>cs&&(cs.type==="refresh"||cs.type==="retur
 export const canProcessReturnReceived=(cs)=>cs&&((cs.type==="refresh"&&["awaiting_return","return_pending"].includes(cs.status))||(cs.type==="return_case"&&cs.status==="in_transit"));
 
 export const canCompleteReturnIntake=(cs)=>cs&&((cs.type==="refresh"&&["returned","return_received"].includes(cs.status))||(cs.type==="return_case"&&["received","inspecting","staged_for_lfs"].includes(cs.status)));
-
-// ─── STATEFUL FACTORY ────────────────────────────────────────────────────────
 //
 // deps = {
-//   cases,                    — current cases array (read)
-//   setCases,                 — React state setter
-//   setToast,                 — toast notification setter
-//   onCaseTransition,         — optional lifecycle callback
-//   onUpdateAsset,            — asset mutation callback
-//   refreshExecDraft,         — current refresh execution draft (read)
-//   setRefreshExecDraft,      — setter for refresh exec draft
-//   returnIntakeDraft,        — current return intake draft (read)
-//   setReturnIntakeDraft,     — setter for return intake draft
+//   cases,                    - current cases array (read)
+//   setCases,                 - React state setter
+//   setToast,                 - toast notification setter
+//   onCaseTransition,         - optional lifecycle callback
+//   onUpdateAsset,            - asset mutation callback
+//   refreshExecDraft,         - current refresh execution draft (read)
+//   setRefreshExecDraft,      - setter for refresh exec draft
+//   returnIntakeDraft,        - current return intake draft (read)
+//   setReturnIntakeDraft,     - setter for return intake draft
 //   // Domain layer (from Phase 1 or module-level)
-//   transitionValidation,     — from createCaseDomain(C)
-//   isAllowedTransition,      — from createCaseDomain(C)
-//   CASE_STATUS,              — from createCaseDomain(C)
-//   CASE_TYPES,               — from createCaseDomain(C)
+//   transitionValidation,     - from createCaseDomain(C)
+//   isAllowedTransition,      - from createCaseDomain(C)
+//   CASE_STATUS,              - from createCaseDomain(C)
+//   CASE_TYPES,               - from createCaseDomain(C)
 //   // Module-level utilities
-//   addEvent,                 — append history event to case
-//   mockShipment,             — mock FedEx shipment builder
-//   toLocalTimestamp,         — timestamp formatter
-//   toLocalISODate,           — date formatter
-//   createAssetActivityEntry, — asset activity log builder
-//   REFRESH_EMAIL_TEMPLATES,  — email template registry
+//   addEvent,                 - append history event to case
+//   mockShipment,             - mock ParcelFlow shipment builder
+//   toLocalTimestamp,         - timestamp formatter
+//   toLocalISODate,           - date formatter
+//   createAssetActivityEntry, - asset activity log builder
+//   REFRESH_EMAIL_TEMPLATES,  - email template registry
 // }
 
 export function createCaseActions(deps){
@@ -73,14 +67,12 @@ export function createCaseActions(deps){
     createAssetActivityEntry, REFRESH_EMAIL_TEMPLATES,
   }=deps;
 
-  // ── Core transition engine ────────────────────────────────────────────────
-
   const caseActionDetailed=(csId,newStatus,extraFields,validationMsg,eventDetail)=>{
     const cs=cases.find(c=>c.id===csId);
     if(!cs)return;
     const err=validationMsg||transitionValidation(cs,newStatus,extraFields||{});
     if(err){setToast(err);return;}
-    setCases(prev=>prev.map(c=>c.id===csId?addEvent({...c,status:newStatus,...(extraFields||{})},"status_change","Current User",eventDetail||`${CASE_STATUS[c.status]?.l} -> ${CASE_STATUS[newStatus]?.l}`):c));
+    setCases(prev=>prev.map(c=>c.id===csId?addEvent({...c,status:newStatus,...(extraFields||{})},"status_change","Demo Operator",eventDetail||`${CASE_STATUS[c.status]?.l} -> ${CASE_STATUS[newStatus]?.l}`):c));
     if(onCaseTransition)onCaseTransition({caseId:csId,type:cs.type,from:cs.status,to:newStatus,caseData:{...cs,...(extraFields||{}),status:newStatus}});
     setToast(`${csId}: ${CASE_STATUS[newStatus]?.l}`);
   };
@@ -90,18 +82,16 @@ export function createCaseActions(deps){
   };
 
   const caseUpdate=(csId,fields,eventDetail)=>{
-    setCases(prev=>prev.map(c=>c.id===csId?addEvent({...c,...fields},"update","Current User",eventDetail):c));
+    setCases(prev=>prev.map(c=>c.id===csId?addEvent({...c,...fields},"update","Demo Operator",eventDetail):c));
     setToast(`${csId} updated`);
   };
-
-  // ── Refresh execution helpers ─────────────────────────────────────────────
 
   const saveRefreshExecution=(cs,fields,eventDetail)=>{
     const nextFields=buildRefreshExecutionFields(fields);
     const currentFields=buildRefreshExecutionFields(cs);
     const changed=Object.keys(nextFields).some(key=>nextFields[key]!==currentFields[key]);
     if(!changed){setToast(`No execution updates for ${cs.id}`);return;}
-    setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c,...nextFields},"update","Current User",eventDetail):c));
+    setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c,...nextFields},"update","Demo Operator",eventDetail):c));
     setRefreshExecDraft(nextFields);
     setToast(`${cs.id} updated`);
   };
@@ -109,7 +99,7 @@ export function createCaseActions(deps){
   const markRefreshReadyToShip=(cs)=>{
     if(!cs.replacementId){setToast("Replacement asset required before shipment prep.");return;}
     const updates={...buildRefreshExecutionFields(refreshExecDraft),shipmentStatus:"ready_to_ship"};
-    if(cs.status==="device_issued")caseActionDetailed(cs.id,"provisioning",updates,null,"Device marked ready to ship — provisioning in progress");
+    if(cs.status==="device_issued")caseActionDetailed(cs.id,"provisioning",updates,null,"Device marked ready to ship - provisioning in progress");
     else saveRefreshExecution(cs,updates,"Shipment prep updated");
   };
 
@@ -131,54 +121,50 @@ export function createCaseActions(deps){
 
   const markRefreshAppointmentComplete=(cs)=>{
     const updates={...buildRefreshExecutionFields(refreshExecDraft),appointmentStatus:"completed"};
-    if(cs.status==="shipped")caseActionDetailed(cs.id,"appointment_complete",updates,null,"Refresh appointment completed — device handed off");
+    if(cs.status==="shipped")caseActionDetailed(cs.id,"appointment_complete",updates,null,"Refresh appointment completed - device handed off");
     else saveRefreshExecution(cs,updates,"Refresh appointment marked complete");
   };
 
   const markRefreshReturnPending=(cs)=>{
     const updates={...buildRefreshExecutionFields(refreshExecDraft),returnExpected:true,returnFollowUpStatus:"pending"};
-    if(cs.status==="appointment_complete")caseActionDetailed(cs.id,"awaiting_return",updates,null,"Awaiting return of old device — return label sent");
+    if(cs.status==="appointment_complete")caseActionDetailed(cs.id,"awaiting_return",updates,null,"Awaiting return of old device - return label sent");
     else saveRefreshExecution(cs,updates,"Awaiting return of old device");
   };
-
-  // ── Label actions (mock → FedEx API later) ────────────────────────────────
 
   const createOutboundLabel=(cs)=>{
     if(!cs.replacementId){setToast("Replacement asset required before creating outbound label.");return;}
     const shipment=mockShipment("outbound",cs);
-    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,outboundShipment:shipment,shipmentId:shipment.trackingNumber,shipmentStatus:"shipped"},"shipment","Current User",`Outbound label created · ${shipment.trackingNumber} · ${cs.replacementId} → ${shipment.recipientAddress}`)));
+    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,outboundShipment:shipment,shipmentId:shipment.trackingNumber,shipmentStatus:"shipped"},"shipment","Demo Operator",`Outbound label created | ${shipment.trackingNumber} | ${cs.replacementId} -> ${shipment.recipientAddress}`)));
     setToast(`Outbound label created: ${shipment.trackingNumber}`);
   };
 
   const createReturnLabel=(cs)=>{
     if(!cs.assetId){setToast("Original asset ID required before creating return label.");return;}
     const shipment=mockShipment("return",cs);
-    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,returnShipment:shipment,returnExpected:true,returnFollowUpStatus:"pending"},"shipment","Current User",`Return label created · ${shipment.trackingNumber} · ${cs.assetId} → Warehouse`)));
+    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,returnShipment:shipment,returnExpected:true,returnFollowUpStatus:"pending"},"shipment","Demo Operator",`Return label created | ${shipment.trackingNumber} | ${cs.assetId} -> Warehouse`)));
     setToast(`Return label created: ${shipment.trackingNumber}`);
   };
 
   const voidOutboundLabel=(cs)=>{
     if(!cs.outboundShipment?.trackingNumber){setToast("No outbound label to void.");return;}
-    const voided={...cs.outboundShipment,labelStatus:"voided",voidedAt:toLocalTimestamp(),voidedBy:"Current User"};
-    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,outboundShipment:voided,shipmentStatus:"not_ready"},"update","Current User",`Outbound label voided · ${voided.trackingNumber}`)));
+    const voided={...cs.outboundShipment,labelStatus:"voided",voidedAt:toLocalTimestamp(),voidedBy:"Demo Operator"};
+    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,outboundShipment:voided,shipmentStatus:"not_ready"},"update","Demo Operator",`Outbound label voided | ${voided.trackingNumber}`)));
     setToast(`Outbound label voided: ${voided.trackingNumber}`);
   };
 
   const voidReturnLabel=(cs)=>{
     if(!cs.returnShipment?.trackingNumber){setToast("No return label to void.");return;}
-    const voided={...cs.returnShipment,labelStatus:"voided",voidedAt:toLocalTimestamp(),voidedBy:"Current User"};
-    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,returnShipment:voided},"update","Current User",`Return label voided · ${voided.trackingNumber}`)));
+    const voided={...cs.returnShipment,labelStatus:"voided",voidedAt:toLocalTimestamp(),voidedBy:"Demo Operator"};
+    setCases(prev=>prev.map(c=>c.id!==cs.id?c:addEvent({...c,returnShipment:voided},"update","Demo Operator",`Return label voided | ${voided.trackingNumber}`)));
     setToast(`Return label voided: ${voided.trackingNumber}`);
   };
-
-  // ── Return intake helpers ─────────────────────────────────────────────────
 
   const saveReturnIntakeFields=(cs,intake,eventDetail)=>{
     const nextFields=buildReturnIntakeFields(intake);
     const currentFields=buildReturnIntakeFields(cs);
     const changed=Object.keys(nextFields).some(key=>nextFields[key]!==currentFields[key]);
     if(!changed){setToast(`No return intake updates for ${cs.id}`);return;}
-    setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c,...nextFields},"update","Current User",eventDetail):c));
+    setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c,...nextFields},"update","Demo Operator",eventDetail):c));
     setReturnIntakeDraft(nextFields);
     setToast(`${cs.id} updated`);
   };
@@ -225,8 +211,6 @@ export function createCaseActions(deps){
     setReturnIntakeDraft(intake);
   };
 
-  // ── Email actions ─────────────────────────────────────────────────────────
-
   const sendRefreshEmail=(cs,templateKey)=>{
     const tmpl=REFRESH_EMAIL_TEMPLATES[templateKey];
     if(!tmpl){setToast("Email template not found.");return;}
@@ -234,7 +218,7 @@ export function createCaseActions(deps){
     if(tmpl.advancesTo&&isAllowedTransition(cs,tmpl.advancesTo)){
       caseActionDetailed(cs.id,tmpl.advancesTo,{},"",`\u{1F4E7} ${tmpl.label} sent \u00B7 "${subject}"`);
     } else {
-      setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c},"email","Current User",`\u{1F4E7} ${tmpl.label} sent \u00B7 "${subject}"`):c));
+      setCases(prev=>prev.map(c=>c.id===cs.id?addEvent({...c},"email","Demo Operator",`\u{1F4E7} ${tmpl.label} sent \u00B7 "${subject}"`):c));
       setToast(`${tmpl.label} sent for ${cs.id}`);
     }
     if(typeof console!=="undefined")console.info(`[REFRESH EMAIL] ${cs.id}\nSubject: ${subject}\n\n${body}`);
@@ -261,3 +245,5 @@ export function createCaseActions(deps){
     sendRefreshEmail,
   };
 }
+
+

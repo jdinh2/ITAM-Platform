@@ -1,33 +1,33 @@
-const DATA = {
+﻿const DATA = {
   months: ["2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03"],
   monthly: {
-    "Anthony Cousin": {"2024-01":0,"2024-02":15,"2024-03":50,"2024-04":70,"2024-05":50,"2024-06":6,"2024-07":24,"2024-08":45,"2024-09":42,"2024-10":0,"2024-11":0,"2024-12":0,"2025-01":0,"2025-02":0,"2025-03":0,"2025-04":0,"2025-05":0,"2025-06":0,"2025-07":4,"2025-08":13,"2025-09":0,"2025-10":5,"2025-11":0,"2025-12":0,"2026-01":0,"2026-02":7,"2026-03":0},
-    "Isaiah Gourdine": {"2024-01":0,"2024-02":12,"2024-03":38,"2024-04":50,"2024-05":56,"2024-06":11,"2024-07":39,"2024-08":40,"2024-09":44,"2024-10":47,"2024-11":41,"2024-12":15,"2025-01":26,"2025-02":45,"2025-03":27,"2025-04":24,"2025-05":11,"2025-06":15,"2025-07":2,"2025-08":4,"2025-09":4,"2025-10":14,"2025-11":1,"2025-12":2,"2026-01":15,"2026-02":14,"2026-03":2},
-    "Michael Girardi": {"2024-01":5,"2024-02":2,"2024-03":0,"2024-04":7,"2024-05":0,"2024-06":0,"2024-07":1,"2024-08":0,"2024-09":0,"2024-10":10,"2024-11":1,"2024-12":2,"2025-01":3,"2025-02":20,"2025-03":2,"2025-04":8,"2025-05":0,"2025-06":0,"2025-07":0,"2025-08":3,"2025-09":0,"2025-10":3,"2025-11":0,"2025-12":0,"2026-01":0,"2026-02":7,"2026-03":0},
-    "Jon Dinh": {"2024-01":0,"2024-02":0,"2024-03":30,"2024-04":56,"2024-05":40,"2024-06":6,"2024-07":30,"2024-08":28,"2024-09":32,"2024-10":48,"2024-11":34,"2024-12":20,"2025-01":23,"2025-02":31,"2025-03":48,"2025-04":8,"2025-05":3,"2025-06":4,"2025-07":4,"2025-08":16,"2025-09":9,"2025-10":15,"2025-11":1,"2025-12":0,"2026-01":2,"2026-02":20,"2026-03":1},
-    "Jonathan Gamble": {"2024-01":5,"2024-02":2,"2024-03":0,"2024-04":14,"2024-05":6,"2024-06":1,"2024-07":27,"2024-08":45,"2024-09":37,"2024-10":66,"2024-11":47,"2024-12":15,"2025-01":58,"2025-02":44,"2025-03":71,"2025-04":43,"2025-05":18,"2025-06":6,"2025-07":8,"2025-08":13,"2025-09":7,"2025-10":10,"2025-11":5,"2025-12":0,"2026-01":22,"2026-02":20,"2026-03":0},
+    "Avery Cole": {"2024-01":0,"2024-02":15,"2024-03":50,"2024-04":70,"2024-05":50,"2024-06":6,"2024-07":24,"2024-08":45,"2024-09":42,"2024-10":0,"2024-11":0,"2024-12":0,"2025-01":0,"2025-02":0,"2025-03":0,"2025-04":0,"2025-05":0,"2025-06":0,"2025-07":4,"2025-08":13,"2025-09":0,"2025-10":5,"2025-11":0,"2025-12":0,"2026-01":0,"2026-02":7,"2026-03":0},
+    "Riley Shaw": {"2024-01":0,"2024-02":12,"2024-03":38,"2024-04":50,"2024-05":56,"2024-06":11,"2024-07":39,"2024-08":40,"2024-09":44,"2024-10":47,"2024-11":41,"2024-12":15,"2025-01":26,"2025-02":45,"2025-03":27,"2025-04":24,"2025-05":11,"2025-06":15,"2025-07":2,"2025-08":4,"2025-09":4,"2025-10":14,"2025-11":1,"2025-12":2,"2026-01":15,"2026-02":14,"2026-03":2},
+    "Cameron Pike": {"2024-01":5,"2024-02":2,"2024-03":0,"2024-04":7,"2024-05":0,"2024-06":0,"2024-07":1,"2024-08":0,"2024-09":0,"2024-10":10,"2024-11":1,"2024-12":2,"2025-01":3,"2025-02":20,"2025-03":2,"2025-04":8,"2025-05":0,"2025-06":0,"2025-07":0,"2025-08":3,"2025-09":0,"2025-10":3,"2025-11":0,"2025-12":0,"2026-01":0,"2026-02":7,"2026-03":0},
+    "Jordan Vale": {"2024-01":0,"2024-02":0,"2024-03":30,"2024-04":56,"2024-05":40,"2024-06":6,"2024-07":30,"2024-08":28,"2024-09":32,"2024-10":48,"2024-11":34,"2024-12":20,"2025-01":23,"2025-02":31,"2025-03":48,"2025-04":8,"2025-05":3,"2025-06":4,"2025-07":4,"2025-08":16,"2025-09":9,"2025-10":15,"2025-11":1,"2025-12":0,"2026-01":2,"2026-02":20,"2026-03":1},
+    "Devon Hart": {"2024-01":5,"2024-02":2,"2024-03":0,"2024-04":14,"2024-05":6,"2024-06":1,"2024-07":27,"2024-08":45,"2024-09":37,"2024-10":66,"2024-11":47,"2024-12":15,"2025-01":58,"2025-02":44,"2025-03":71,"2025-04":43,"2025-05":18,"2025-06":6,"2025-07":8,"2025-08":13,"2025-09":7,"2025-10":10,"2025-11":5,"2025-12":0,"2026-01":22,"2026-02":20,"2026-03":0},
   },
-  totals: {"Anthony Cousin":331,"Isaiah Gourdine":599,"Michael Girardi":74,"Jon Dinh":509,"Jonathan Gamble":590},
+  totals: {"Avery Cole":331,"Riley Shaw":599,"Cameron Pike":74,"Jordan Vale":509,"Devon Hart":590},
   teamMonthly: {"2024-01":10,"2024-02":31,"2024-03":118,"2024-04":197,"2024-05":152,"2024-06":24,"2024-07":121,"2024-08":158,"2024-09":155,"2024-10":171,"2024-11":123,"2024-12":52,"2025-01":110,"2025-02":140,"2025-03":148,"2025-04":83,"2025-05":32,"2025-06":25,"2025-07":18,"2025-08":49,"2025-09":20,"2025-10":47,"2025-11":7,"2025-12":2,"2026-01":39,"2026-02":68,"2026-03":3},
   allMonthly: {"2024-01":209,"2024-02":163,"2024-03":215,"2024-04":258,"2024-05":201,"2024-06":27,"2024-07":213,"2024-08":217,"2024-09":254,"2024-10":260,"2024-11":224,"2024-12":70,"2025-01":204,"2025-02":214,"2025-03":241,"2025-04":152,"2025-05":57,"2025-06":112,"2025-07":38,"2025-08":83,"2025-09":48,"2025-10":94,"2025-11":16,"2025-12":9,"2026-01":106,"2026-02":149,"2026-03":3},
   yoy: {
-    "Anthony Cousin": {"2024":302,"2025":22,"2026":7},
-    "Isaiah Gourdine": {"2024":393,"2025":175,"2026":31},
-    "Michael Girardi": {"2024":28,"2025":39,"2026":7},
-    "Jon Dinh": {"2024":324,"2025":162,"2026":23},
-    "Jonathan Gamble": {"2024":265,"2025":283,"2026":42},
+    "Avery Cole": {"2024":302,"2025":22,"2026":7},
+    "Riley Shaw": {"2024":393,"2025":175,"2026":31},
+    "Cameron Pike": {"2024":28,"2025":39,"2026":7},
+    "Jordan Vale": {"2024":324,"2025":162,"2026":23},
+    "Devon Hart": {"2024":265,"2025":283,"2026":42},
   },
-  team: ["Anthony Cousin","Isaiah Gourdine","Michael Girardi","Jon Dinh","Jonathan Gamble"],
+  team: ["Avery Cole","Riley Shaw","Cameron Pike","Jordan Vale","Devon Hart"],
   totalAll: 3837,
   totalItam: 2103,
 };
 
 const EXTRA = {
-  "Anthony Cousin": { inc: 216, incSince: "Jan 2024", offboard: 371, offSince: "Jul 2025", onboard: 0, onSince: "" },
-  "Isaiah Gourdine": { inc: 623, incSince: "Jan 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
-  "Michael Girardi": { inc: 133, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 2612, onSince: "Feb 2024" },
-  "Jon Dinh": { inc: 429, incSince: "Feb 2024", offboard: 1332, offSince: "Feb 2024", onboard: 0, onSince: "" },
-  "Jonathan Gamble": { inc: 435, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
+  "Avery Cole": { inc: 216, incSince: "Jan 2024", offboard: 371, offSince: "Jul 2025", onboard: 0, onSince: "" },
+  "Riley Shaw": { inc: 623, incSince: "Jan 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
+  "Cameron Pike": { inc: 133, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 2612, onSince: "Feb 2024" },
+  "Jordan Vale": { inc: 429, incSince: "Feb 2024", offboard: 1332, offSince: "Feb 2024", onboard: 0, onSince: "" },
+  "Devon Hart": { inc: 435, incSince: "Feb 2024", offboard: 0, offSince: "", onboard: 0, onSince: "" },
 };
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -69,7 +69,7 @@ export function getTeamPerformanceModel() {
   const totalOnboarding = Object.values(EXTRA).reduce((sum, item) => sum + item.onboard, 0);
   const totalOffboarding = Object.values(EXTRA).reduce((sum, item) => sum + item.offboard, 0);
   const grandTotalAll = DATA.totalItam + totalIncidents + totalOnboarding + totalOffboarding;
-  const yoyRefreshDeltaPct = round(((DATA.yoy["Anthony Cousin"]["2025"] + DATA.yoy["Isaiah Gourdine"]["2025"] + DATA.yoy["Michael Girardi"]["2025"] + DATA.yoy["Jon Dinh"]["2025"] + DATA.yoy["Jonathan Gamble"]["2025"]) - (DATA.yoy["Anthony Cousin"]["2024"] + DATA.yoy["Isaiah Gourdine"]["2024"] + DATA.yoy["Michael Girardi"]["2024"] + DATA.yoy["Jon Dinh"]["2024"] + DATA.yoy["Jonathan Gamble"]["2024"])) / (DATA.yoy["Anthony Cousin"]["2024"] + DATA.yoy["Isaiah Gourdine"]["2024"] + DATA.yoy["Michael Girardi"]["2024"] + DATA.yoy["Jon Dinh"]["2024"] + DATA.yoy["Jonathan Gamble"]["2024"]) * 100, 1);
+  const yoyRefreshDeltaPct = round(((DATA.yoy["Avery Cole"]["2025"] + DATA.yoy["Riley Shaw"]["2025"] + DATA.yoy["Cameron Pike"]["2025"] + DATA.yoy["Jordan Vale"]["2025"] + DATA.yoy["Devon Hart"]["2025"]) - (DATA.yoy["Avery Cole"]["2024"] + DATA.yoy["Riley Shaw"]["2024"] + DATA.yoy["Cameron Pike"]["2024"] + DATA.yoy["Jordan Vale"]["2024"] + DATA.yoy["Devon Hart"]["2024"])) / (DATA.yoy["Avery Cole"]["2024"] + DATA.yoy["Riley Shaw"]["2024"] + DATA.yoy["Cameron Pike"]["2024"] + DATA.yoy["Jordan Vale"]["2024"] + DATA.yoy["Devon Hart"]["2024"]) * 100, 1);
 
   const totalsByTech = DATA.team.map((tech) => {
     const refreshes = DATA.totals[tech];
@@ -148,18 +148,19 @@ export function getTeamPerformanceModel() {
       top3Share,
     },
     executiveSummary: [
-      { title: "Jon Dinh - Heaviest Combined Load", description: "509 refreshes + 429 incidents + 1,332 offboarding = 2,270 total tasks. Primary offboarding owner." },
-      { title: "Michael Girardi - Onboarding Specialist", description: "74 refreshes + 2,612 onboarding + 133 incidents = 2,819 total tasks. Highest individual task count." },
-      { title: "Isaiah and Jonathan - Refresh Backbone", description: "Combined 1,189 refreshes and 1,058 incidents. They anchor refresh throughput." },
-      { title: "Anthony Cousin - Role Shift", description: "302 refreshes in 2024, then picked up 371 offboarding tasks starting Jul 2025." },
+      { title: "Jordan Vale - Heaviest Combined Load", description: "509 refreshes + 429 incidents + 1,332 offboarding = 2,270 total tasks. Primary offboarding owner." },
+      { title: "Cameron Pike - Onboarding Specialist", description: "74 refreshes + 2,612 onboarding + 133 incidents = 2,819 total tasks. Highest individual task count." },
+      { title: "Riley and Devon - Refresh Backbone", description: "Combined 1,189 refreshes and 1,058 incidents. They anchor refresh throughput." },
+      { title: "Avery Cole - Role Shift", description: "302 refreshes in 2024, then picked up 371 offboarding tasks starting Jul 2025." },
       { title: "Declining Refresh Demand", description: "Historical refresh volume fell sharply year over year, but incidents, onboarding, and offboarding still create meaningful hidden load." },
-      { title: "Single-Point-of-Failure Risk", description: "Girardi remains the only onboarding owner and Dinh remains the primary offboarding owner." },
+      { title: "Single-Point-of-Failure Risk", description: "Cameron Pike remains the only onboarding owner and Jordan Vale remains the primary offboarding owner." },
     ],
     specialization: [
-      { role: "Refresh Core", techs: "Isaiah, Jonathan, Jon", description: "Handle 80.7% of all laptop refreshes." },
-      { role: "Onboarding Owner", techs: "Michael Girardi", description: "Sole owner of 2,612 onboarding tasks." },
-      { role: "Offboarding Primary", techs: "Jon Dinh", description: "Primary owner of 1,332 offboarding tasks." },
-      { role: "Offboarding Secondary", techs: "Anthony Cousin", description: "Secondary offboarding coverage with 371 tasks." },
+      { role: "Refresh Core", techs: "Riley, Devon, Jordan", description: "Handle 80.7% of all laptop refreshes." },
+      { role: "Onboarding Owner", techs: "Cameron Pike", description: "Sole owner of 2,612 onboarding tasks." },
+      { role: "Offboarding Primary", techs: "Jordan Vale", description: "Primary owner of 1,332 offboarding tasks." },
+      { role: "Offboarding Secondary", techs: "Avery Cole", description: "Secondary offboarding coverage with 371 tasks." },
     ],
   };
 }
+

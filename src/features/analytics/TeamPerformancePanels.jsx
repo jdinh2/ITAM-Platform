@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { getTeamPerformanceModel } from "./teamPerformanceData.js";
 
 const barStyle = (C, color, width) => ({
@@ -47,7 +47,7 @@ export function ExecutiveTeamPerformanceSection({ C, MN, SH, Kpi }) {
         <Kpi label="Offboarding" value={totals.offboarding.toLocaleString()} sub="Historical offboarding load" color={C.amber} />
         <Kpi label="Grand Total Tasks" value={totals.grandTotal.toLocaleString()} sub="Refresh + incidents + onboarding + offboarding" color={C.orange} />
         <Kpi label="Refresh YoY Change" value={`${totals.yoyRefreshDeltaPct}%`} sub="2024 to 2025 refresh volume" color={totals.yoyRefreshDeltaPct < 0 ? C.red : C.green} />
-        <Kpi label="Active Refresh Core" value={`${totals.activeRefreshCore} techs`} sub="Isaiah, Jonathan, Jon" color={C.cyan} />
+        <Kpi label="Active Refresh Core" value={`${totals.activeRefreshCore} techs`} sub="Riley, Devon, Jordan" color={C.cyan} />
         <Kpi label="Specialized Roles" value={totals.specializedRoleCount} sub="Onboarding + offboarding concentration" color={C.purple} />
       </div>
       <AnalyticsPanel C={C} MN={MN} title="Executive Summary" badge={`${model.totalsByTech.length} technicians`}>
@@ -65,7 +65,7 @@ export function WorkloadPlannerAnalyticsSection({ C, MN, SH }) {
 
   return (
     <>
-      <SH color={C.cyan} badge="From ITAM_Dashboard">Historical Trends and Distribution</SH>
+      <SH color={C.cyan} badge="From legacy demo dashboard">Historical Trends and Distribution</SH>
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 10 }}>
         <AnalyticsPanel C={C} MN={MN} title="Monthly Team Refresh Volume" badge="Last 12 months">
           {recentTrend.map((item) => (
@@ -222,7 +222,7 @@ export function TeamWorkloadInsightsSection({ C, MN, SH, Kpi }) {
                 <div style={{ padding: "8px 10px", border: `1px solid ${C.borderLight}`, borderRadius: 6 }}><div style={{ fontSize: 9, color: C.muted, fontFamily: MN }}>REFRESH SHARE</div><div style={{ fontSize: 18, fontWeight: 700, color: C.purple }}>{selected.sharePct}%</div></div>
               </div>
               <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.55 }}>
-                Historical workload from `ITAM_Dashboard.jsx` is now embedded here alongside the live assignment workload cards above, so planners can compare current assignments against long-run technician specialization and throughput.
+                Historical workload from `legacy demo dashboard` is now embedded here alongside the live assignment workload cards above, so planners can compare current assignments against long-run technician specialization and throughput.
               </div>
             </AnalyticsPanel>
           </div>
@@ -231,3 +231,4 @@ export function TeamWorkloadInsightsSection({ C, MN, SH, Kpi }) {
     </>
   );
 }
+
